@@ -92,23 +92,13 @@ psudo build <CAPSULE> [-o <DIR>] [--run]
 
 ---
 
-## 3. `.psudo` Language Quick Reference
+## 3. Syntax Visibility & Common Diagnostics
 
-Run `psudo -s` anytime for the compressed syntax card. Key rules:
-- **Indentation:** 4 spaces (Python-style blocks). No curly braces for control flow.
-- **Comments:** `// line` and `/* block */`. Never use `#` (triggers `E001`).
-- **Variables:** `let x = expr` (mutable; reassign with `x = expr`).
-- **Control Flow:** `if (cond)` / `if cond` + `else`, `while (cond)`, `for let i = 0` (newline) `i < n` (newline) `i = i + 1`.
-- **Ownership:** `num`, `bool`, `str` are `Copy`. Arrays (`[...]`) and maps (`{...}`) are `Move` (assigning `let b = a` moves `a`).
-- **Builtins:**
-  - Collections & types: `len`, `push`, `pop`, `slice`, `keys`, `values`, `has`, `str`, `num`, `bool`
-  - Sandbox FS (confined to `.pseudo/sandbox/`): `readFile`, `writeFile`, `listDir`, `exists`, `isFile`, `isDir`, `mkdir`, `load_json`, `save_json`
-  - Persistent KV & rate limiting: `persistent_kv`, `get`, `set`, `has`, `del`, `rate_limiter_sliding_window`, `rate_limiter_token_bucket`, `consume`
-  - Timing: `clock`, `time_now_secs`, `time_micros`, `time_nanos`, `sleep_ms`, `benchmark`
+Do not print or inline `.psudo` syntax rules automatically. If `.psudo` syntax needs to be displayed (or before running `psudo -s`), ask the user a question first to confirm they want the syntax shown.
 
 ### Common Diagnostics (`psudo check`)
-- `E001`: Unrecognized character (most often `#` comment instead of `//`).
-- `E002`: Indentation error (must be 4-space increments).
+- `E001`: Unrecognized character.
+- `E002`: Indentation error.
 - `E003`: Unclosed string literal.
 - `E004`: Unresolved symbol or leftover `@stub`.
 - `E005`: Borrow checker conflict (use-after-move on array/map).
@@ -128,9 +118,8 @@ psudo dag export <CAPSULE> --format <mermaid|dot> [-o <FILE>]
 psudo benchmark <CAPSULE>
 psudo mcp info [--model <PATH>]
 
-# Export CLI guide and syntax card
+# Export CLI guide
 psudo docs [-o <FILE>]
-psudo -s
 ```
 
 ---
@@ -140,5 +129,3 @@ psudo -s
 1. **Tampering with `psudo.bin`:** Never read, parse, or edit `psudo.bin` directly. Always use `psudo vfs`, `psudo contract`, `psudo synth`, and `psudo check`.
 2. **Monolithic stubs:** Never ask a 33M–100M GGUF model to synthesize an entire application in one `@stub`. Split into small functions and compose them.
 3. **Skipping `psudo check -a -b`:** Always confirm 0 unresolved stubs and 0 borrow errors before `psudo build --run`.
-4. **Wrong comment/indent syntax:** Never write `#` comments or 2-space indents in `.psudo` files.
-5. **Repo workspace hygiene (in this repository):** Name temporary CLI test workspaces with a `fibnacci_` prefix (for example `fibnacci_test_workspace/`) and write reports under `reports/`.

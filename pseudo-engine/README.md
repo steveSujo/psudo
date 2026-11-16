@@ -1,6 +1,6 @@
 # pseudo-engine
 
-Pure Rust, zero-copy inference engine and CLI for ternary-quantized (`TQ2_0`, BitNet-style) GGUF models. Part of the [pseudo](../README.md) ecosystem.
+Pure Rust, zero-copy inference engine and CLI for ternary-quantized (`TQ2_0`, BitNet-style) GGUF models. Part of the [psudo](../README.md) ecosystem.
 
 ## Modules (`src/`)
 
@@ -22,11 +22,11 @@ KV tiers: Tier 0 (`0..150t`) pinned invariants; Tier 1 (`150..~800t`) module con
 cargo build --release --manifest-path pseudo-engine/Cargo.toml
 
 # Interactive chat
-cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-3.2b-tq2_0.gguf --chat --color
+cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-100m-tq2_0.gguf --chat --color
 # One-shot
-cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-3.2b-tq2_0.gguf -p "fn calculate_total() {"
+cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-100m-tq2_0.gguf -p "fn calculate_total() {"
 # Benchmark
-cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-3.2b-tq2_0.gguf --benchmark
+cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-100m-tq2_0.gguf --benchmark
 # MCP server over stdio (model stays hot)
 cargo run --release --manifest-path pseudo-engine/Cargo.toml -- --mcp
 ```
@@ -35,7 +35,7 @@ cargo run --release --manifest-path pseudo-engine/Cargo.toml -- --mcp
 
 | Flag | Default | Description |
 |---|---|---|
-| `-m, --model` | `pseudo-3.2b-tq2_0.gguf` | GGUF model path |
+| `-m, --model` | `pseudo-100m-tq2_0.gguf` | GGUF model path |
 | `-t, --tokenizer` | none | Tokenizer file |
 | `-p, --prompt` | none | One-shot prompt |
 | `--chat` | off | REPL with persistent KV cache |

@@ -1,6 +1,6 @@
 # pseudo-transpiler
 
-Bidirectional transpiler between `.psudo` and safe Rust, via a shared tree-sitter-style IR (`TsNode`). Part of the [pseudo](../README.md) ecosystem. Depends on the `psudo` crate (`../pseudo-lang`).
+Bidirectional transpiler between `.psudo` and safe Rust, via a shared tree-sitter-style IR (`TsNode`). Part of the [psudo](../README.md) ecosystem. Depends on the `psudo` crate (`../pseudo-lang`).
 
 ## Modules (`src/`)
 

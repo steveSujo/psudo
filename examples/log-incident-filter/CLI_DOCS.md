@@ -30,7 +30,7 @@ When working with `psudo`, there is a strict division of labor between the **Out
 - `psudo vfs list <CAPSULE>` -> List virtual files inside capsule.
 - `psudo vfs rm [<CAPSULE>] <VPATH>` -> Remove virtual file from capsule.
 - `psudo synth <CAPSULE> [--write]` -> Synthesize stubs into working code. Use `--write` to save into capsule.
-- `psudo check <CAPSULE> [-b] [-a]` -> Verify code syntax and types. `-b` checks borrows; `-a` checks all modules.
+- `psudo check <CAPSULE> [--all-modules]` -> Verify syntax, static types, borrow rules, and check all modules for unresolved stubs.
 - `psudo test <CAPSULE>` -> Run in-capsule tests (`test "..."` blocks).
 - `psudo run <CAPSULE>` -> Run script via interpreter (resolves `.pseudo/sandbox/` relative to capsule workspace).
 - `psudo build <CAPSULE> --run` -> Compile to native binary and execute.
@@ -46,7 +46,7 @@ When working with `psudo`, there is a strict division of labor between the **Out
 2. **Inspect Stubs**: `psudo vfs show psudo.bin -h` (view function signatures and active `@stub` directives).
 3. **Declare Stubs**: `psudo vfs stub psudo.bin <name> <params...> --directive "<what it does>"`
 4. **Synthesize Code**: `psudo synth psudo.bin --write` (generates implementations).
-5. **Verify**: `psudo check psudo.bin -a -b` (checks types, stubs, and borrows).
+5. **Verify**: `psudo check psudo.bin --all-modules` (checks types, stubs, and borrows).
 6. **Test & Run**: `psudo test psudo.bin` followed by `psudo build psudo.bin --run`.
 
 ---

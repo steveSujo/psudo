@@ -5,7 +5,7 @@ All notable changes to `psudo` are documented in this file.
 ## [0.7.0]
 
 ### Added
-- **Multi-module verification**: `psudo check <capsule> -a` scans all virtual `.psudo` modules in a capsule for unresolved stubs.
+- **Multi-module verification**: `psudo check <capsule> --all-modules` scans all virtual `.psudo` modules in a capsule for unresolved stubs.
 - **Timing & micro-benchmarking builtins**: `time_micros()`, `time_nanos()`, `sleep_ms(ms)`, and `benchmark(iterations, callable)`.
 - **Topological DAG task engine**: `TaskDAG` with Kahn's algorithm sorting, cycle detection (`CycleError`), and `psudo dag export --format mermaid/dot`.
 - **Rate limiters & persistent KV**: `rate_limiter_sliding_window`, `rate_limiter_token_bucket`, `consume`, and `persistent_kv` (`get`, `set`, `has`, `del`).

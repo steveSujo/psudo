@@ -88,7 +88,7 @@ The `examples/` folder ships three pre-built workspace capsules (`psudo.bin`) wi
 
 ```bash
 # 1. JSON Server Log Incident Filter
-./target/release/psudo check examples/log-incident-filter/psudo.bin -a -b
+./target/release/psudo check examples/log-incident-filter/psudo.bin --all-modules
 ./target/release/psudo build examples/log-incident-filter/psudo.bin --run
 
 # 2. IoT Temperature Sensor Alert Monitor
@@ -141,8 +141,8 @@ Need to tweak a constant or requirement later? Re-synthesize a single symbol in 
 
 ### Step 5: Verify Borrows & Compile to Native Rust
 ```bash
-# Static type check, borrow check (-b), and unresolved stub audit (-a)
-./target/release/psudo check my-app/psudo.bin -a -b
+# Static type check, borrow check, and unresolved stub audit across all modules
+./target/release/psudo check my-app/psudo.bin --all-modules
 
 # Transpile to zero-unwrap() safe Rust, compile via cargo, and run
 ./target/release/psudo build my-app/psudo.bin --run

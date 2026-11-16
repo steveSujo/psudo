@@ -29,7 +29,7 @@ cargo build --release
 ./target/release/psudo contract my-app/psudo.bin
 ./target/release/psudo vfs stub my-app/psudo.bin add_one x --directive "return x + 1"
 ./target/release/psudo synth my-app/psudo.bin --model ./pseudo-100m-tq2_0.gguf --write
-./target/release/psudo check my-app/psudo.bin -a -b
+./target/release/psudo check my-app/psudo.bin --all-modules
 ./target/release/psudo build my-app/psudo.bin --run
 ```
 

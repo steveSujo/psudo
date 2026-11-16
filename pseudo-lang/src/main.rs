@@ -1090,7 +1090,17 @@ fn run_cmd_check(args: &[String]) {
                     for (vpath, source) in files_to_check {
                         let mut lexer = Lexer::new(source.clone());
                         match lexer.scan_tokens() {
-                            Ok(_) => {
+                            Ok(tokens) => {
+                                let mut parser = Parser::new(tokens);
+                                if let Err(perr) = parser.parse() {
+                                    let diag = Diagnostic::from_parser_error(&perr, vpath);
+                                    if json_output {
+                                        println!("{}", diag.to_json());
+                                    } else {
+                                        eprintln!("{}", diag.render_terminal(lexer.source()));
+                                    }
+                                    process::exit(1);
+                                }
                                 let digest = analyze_psudo_source(source, vpath, None);
                                 match digest {
                                     Ok(d) => {
@@ -1166,7 +1176,17 @@ fn run_cmd_check(args: &[String]) {
 
                     let mut lexer = Lexer::new(source.clone());
                     match lexer.scan_tokens() {
-                        Ok(_) => {
+                        Ok(tokens) => {
+                            let mut parser = Parser::new(tokens);
+                            if let Err(perr) = parser.parse() {
+                                let diag = Diagnostic::from_parser_error(&perr, &cap.entrypoint);
+                                if json_output {
+                                    println!("{}", diag.to_json());
+                                } else {
+                                    eprintln!("{}", diag.render_terminal(lexer.source()));
+                                }
+                                process::exit(1);
+                            }
                             let digest = match analyze_psudo_source(&source, &cap.entrypoint, None) {
                                 Ok(d) => d,
                                 Err(err) => {
@@ -1792,7 +1812,7 @@ fn run_cmd_test(args: &[String]) {
     let statements = match parser.parse() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Parse error in tests: {:?}", e);
+            eprintln!("Parse error in tests: {}", e);
             process::exit(1);
         }
     };
@@ -1842,13 +1862,21 @@ fn run_cmd_test(args: &[String]) {
                 interpreter.execute(helper);
             }
             let res = interpreter.execute(body);
-            let success = match res {
-                Some(DataTypes::Result(Ok(_))) => true,
-                Some(DataTypes::Result(Err(e))) => {
-                    eprintln!("  -> Assertion failed: {}", e);
-                    false
+            let failures = interpreter.environment.borrow().assertion_failures.clone();
+            let success = if !failures.is_empty() {
+                for f in &failures {
+                    eprintln!("  -> Assertion failed: {}", f);
                 }
-                _ => true,
+                false
+            } else {
+                match res {
+                    Some(DataTypes::Result(Ok(_))) => true,
+                    Some(DataTypes::Result(Err(e))) => {
+                        eprintln!("  -> Assertion failed: {}", e);
+                        false
+                    }
+                    _ => true,
+                }
             };
 
             if success {

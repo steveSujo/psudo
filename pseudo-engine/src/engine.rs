@@ -5,6 +5,8 @@ use crate::sampler::{PirPdaConstraint, Sampler, SparseChannel, TokenClass};
 use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
 
+const EMBEDDED_TOKENIZER_BYTES: &[u8] = include_bytes!("../models/tokenizer.json");
+
 pub struct GenerationMetrics {
     pub prompt_tokens: usize,
     pub generated_tokens: usize,
@@ -60,7 +62,8 @@ impl Engine {
                 Tokenizer::from_file(&p)
                     .map_err(|e| format!("Failed to load tokenizer from {}: {}", p.display(), e))?
             } else {
-                return Err("Tokenizer path not provided and default tokenizer.json not found in model dir, CWD, or exe dir".to_string());
+                Tokenizer::from_bytes(EMBEDDED_TOKENIZER_BYTES)
+                    .map_err(|e| format!("Failed to load embedded tokenizer: {}", e))?
             }
         };
 

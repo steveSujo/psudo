@@ -77,11 +77,11 @@ I trained the models from scratch on a corpus distilled from **[`Qwen/Qwen2.5-Co
 - **Rust toolchain** (`1.75+`, `cargo` on your `PATH`).
 - Clone this repo (no C/C++ compiler or CUDA setup required—`pseudo-engine` is 100% pure Rust using integer-only ternary arithmetic and `memmap2`).
 
-### 2. Build the CLI
+### 2. Build the CLI & Inference Engine
 ```bash
 cargo build --release
 ```
-The compiled binary is at `./target/release/psudo` (`target\release\psudo.exe` on Windows).
+This builds both `./target/release/psudo` (`psudo.exe` on Windows) and `./target/release/pseudo-engine` (`pseudo-engine.exe` on Windows) with the `tokenizer.json` BPE vocabulary embedded—no extra flags or manual setup needed.
 
 ### 3. Run the Included Example Apps
 The `examples/` folder ships three pre-built workspace capsules (`psudo.bin`) with mock sandbox data in `.pseudo/sandbox/`:

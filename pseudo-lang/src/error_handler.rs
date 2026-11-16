@@ -49,7 +49,7 @@ use std::{error::Error, fmt::Display, num::ParseFloatError};
 //         self.had_error = true;
 //     }
 // }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Errors {
     //add line data
     UnterminatedGroup,
@@ -57,6 +57,13 @@ pub enum Errors {
     UnexpectedChar,
     NonPrimaryToken,
     ParseFloatError(ParseFloatError),
+    SyntaxError {
+        line: usize,
+        col: usize,
+        found: String,
+        message: String,
+        help: Option<String>,
+    },
 }
 
 impl Display for Errors {
@@ -67,6 +74,23 @@ impl Display for Errors {
             Errors::UnexpectedChar => write!(f, "Unknown Character by the Lexer for found"),
             Errors::NonPrimaryToken => write!(f, "Unknown Token for Primary Expression"),
             Errors::ParseFloatError(..) => write!(f, "NUMBER Token Parse Error"),
+            Errors::SyntaxError {
+                line,
+                col,
+                found,
+                message,
+                help,
+            } => {
+                write!(
+                    f,
+                    "[line {}, col {}] {} (found '{}')",
+                    line, col, message, found
+                )?;
+                if let Some(h) = help {
+                    write!(f, " -- help: {}", h)?;
+                }
+                Ok(())
+            }
         }
     }
 }

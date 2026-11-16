@@ -5,4 +5,7 @@ members = [
     "pseudo-engine",
     "pseudo-transpiler",
 ]
-default-members = ["pseudo-lang"]
+default-members = [
+    "pseudo-lang",
+    "pseudo-engine",
+]

@@ -100,10 +100,13 @@ pub fn resolve_model_path(explicit: Option<&Path>) -> Option<PathBuf> {
         }
     }
     let mut candidates = vec![
+        PathBuf::from("pseudo-100m-tq2_0.gguf"),
         PathBuf::from("pseudo-33m-tq2_0.gguf"),
         PathBuf::from("pseudo-lang/models/pseudo-33m-tq2_0.gguf"),
         PathBuf::from("../pseudo-lang/models/pseudo-33m-tq2_0.gguf"),
+        PathBuf::from("../pseudo-100m-tq2_0.gguf"),
         PathBuf::from("../pseudo-33m-tq2_0.gguf"),
+        PathBuf::from("../../pseudo-100m-tq2_0.gguf"),
         PathBuf::from("../../pseudo-33m-tq2_0.gguf"),
         PathBuf::from(".pseudo/state/models/pseudo-33m-tq2_0.gguf"),
         PathBuf::from(".pseudo/state/checkpoints/pseudo-33m-tq2_0.gguf"),
@@ -116,9 +119,12 @@ pub fn resolve_model_path(explicit: Option<&Path>) -> Option<PathBuf> {
     ];
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
+            candidates.push(parent.join("pseudo-100m-tq2_0.gguf"));
             candidates.push(parent.join("pseudo-33m-tq2_0.gguf"));
             candidates.push(parent.join("models/pseudo-33m-tq2_0.gguf"));
             candidates.push(parent.join("../models/pseudo-33m-tq2_0.gguf"));
+            candidates.push(parent.join("../../pseudo-100m-tq2_0.gguf"));
+            candidates.push(parent.join("../../pseudo-33m-tq2_0.gguf"));
             candidates.push(parent.join("../../../pseudo-lang/models/pseudo-33m-tq2_0.gguf"));
             candidates.push(parent.join("../../../pseudo-33m-tq2_0.gguf"));
             candidates.push(parent.join("../../../../pseudo-33m-tq2_0.gguf"));
@@ -136,19 +142,23 @@ pub fn resolve_model_path(explicit: Option<&Path>) -> Option<PathBuf> {
 }
 
 pub fn find_engine_binary() -> Option<PathBuf> {
+    if let Ok(env_bin) = std::env::var("PSUDO_ENGINE_BIN") {
+        let p = PathBuf::from(env_bin);
+        if p.exists() {
+            return Some(p);
+        }
+    }
     let exe = if cfg!(windows) {
         "pseudo-engine.exe"
     } else {
         "pseudo-engine"
     };
-    let mut candidates = vec![
-        PathBuf::from("pseudo-engine/target/release").join(exe),
-        PathBuf::from("../pseudo-engine/target/release").join(exe),
-        PathBuf::from("target/release").join(exe),
-    ];
+    let mut candidates = Vec::new();
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
             candidates.push(parent.join(exe));
+            candidates.push(parent.join("../release").join(exe));
+            candidates.push(parent.join("../debug").join(exe));
             candidates.push(parent.join("../pseudo-engine/target/release").join(exe));
             candidates.push(
                 parent
@@ -157,6 +167,13 @@ pub fn find_engine_binary() -> Option<PathBuf> {
             );
         }
     }
+    candidates.extend([
+        PathBuf::from("target/release").join(exe),
+        PathBuf::from("target/debug").join(exe),
+        PathBuf::from("pseudo-engine/target/release").join(exe),
+        PathBuf::from("../pseudo-engine/target/release").join(exe),
+        PathBuf::from("../../target/release").join(exe),
+    ]);
     candidates.into_iter().find(|p| p.exists())
 }
 

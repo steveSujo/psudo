@@ -212,6 +212,20 @@ impl Lexer {
             }
             '+' => self.add_token(TokenType::PLUS),
             '*' => self.add_token(TokenType::STAR),
+            '&' => {
+                if self.match_next('&') {
+                    self.add_token(TokenType::AND);
+                } else {
+                    return Err(Errors::UnexpectedChar);
+                }
+            }
+            '|' => {
+                if self.match_next('|') {
+                    self.add_token(TokenType::OR);
+                } else {
+                    return Err(Errors::UnexpectedChar);
+                }
+            }
             '!' => {
                 let token_type = if self.match_next('=') {
                     TokenType::BangEqual

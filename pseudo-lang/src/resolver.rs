@@ -75,6 +75,39 @@ impl Resolver {
             "isDir",
             "listDir",
             "mkdir",
+            "pass",
+            "todo",
+            "assert",
+            "assert_eq",
+            "assert_ne",
+            "ok",
+            "err",
+            "isOk",
+            "isError",
+            "unwrap",
+            "expect",
+            "sqrt",
+            "pow",
+            "abs",
+            "min",
+            "max",
+            "round",
+            "floor",
+            "ceil",
+            "time_now_sec",
+            "time_now_secs",
+            "time_micros",
+            "time_nanos",
+            "sleep_ms",
+            "benchmark",
+            "deque_new",
+            "push_front",
+            "pop_front",
+            "fmt_currency",
+            "load_json",
+            "persistent_kv",
+            "get",
+            "set",
             "@stub",
         ];
         if let Some(scope) = self.scopes.last_mut() {
@@ -340,6 +373,14 @@ impl Resolver {
                 let idx_id = self.next_id();
                 self.resolve_expression_inner(obj, obj_id);
                 self.resolve_expression_inner(idx, idx_id);
+            }
+            Expression::IndexSet(obj, idx, val) => {
+                let obj_id = self.next_id();
+                let idx_id = self.next_id();
+                let val_id = self.next_id();
+                self.resolve_expression_inner(obj, obj_id);
+                self.resolve_expression_inner(idx, idx_id);
+                self.resolve_expression_inner(val, val_id);
             }
             Expression::Object(fields) => {
                 for (_, value) in fields {

@@ -209,6 +209,7 @@ pub enum Expression {
     Call(String, Vec<Expression>), // function name, arguments
     Array(Vec<Expression>),
     Index(Box<Expression>, Box<Expression>),
+    IndexSet(Box<Expression>, Box<Expression>, Box<Expression>),
     Object(Vec<(String, Expression)>),
     Get(Box<Expression>, String),
     Set(Box<Expression>, String, Box<Expression>),
@@ -231,6 +232,7 @@ pub trait ExpressionVisitor<T> {
     fn visit_call(&mut self, name: &str, args: &[Expression]) -> T;
     fn visit_array(&mut self, elements: &[Expression]) -> T;
     fn visit_index(&mut self, object: &Expression, index: &Expression) -> T;
+    fn visit_index_set(&mut self, object: &Expression, index: &Expression, value: &Expression) -> T;
     fn visit_object(&mut self, fields: &[(String, Expression)]) -> T;
     fn visit_get(&mut self, object: &Expression, name: &str) -> T;
     fn visit_set(&mut self, object: &Expression, name: &str, value: &Expression) -> T;
@@ -247,6 +249,7 @@ pub struct Environment {
     vars: HashMap<String, DataTypes>,
     parent: Option<Rc<RefCell<Environment>>>,
     pub return_val: Option<DataTypes>,
+    pub assertion_failures: Vec<String>,
 }
 
 impl Environment {
@@ -255,6 +258,7 @@ impl Environment {
             vars,
             parent: None,
             return_val: None,
+            assertion_failures: Vec::new(),
         }
     }
 
@@ -263,6 +267,7 @@ impl Environment {
             vars,
             parent: Some(parent),
             return_val: None,
+            assertion_failures: Vec::new(),
         }
     }
 
@@ -510,6 +515,7 @@ impl CheckedInterpret {
             Expression::Call(name, args) => self.visit_call(name, args),
             Expression::Array(elements) => self.visit_array(elements),
             Expression::Index(object, index) => self.visit_index(object, index),
+            Expression::IndexSet(object, index, value) => self.visit_index_set(object, index, value),
             Expression::Object(fields) => self.visit_object(fields),
             Expression::Get(object, name) => self.visit_get(object, name),
             Expression::Set(object, name, value) => self.visit_set(object, name, value),
@@ -538,7 +544,12 @@ impl ExpressionVisitor<DataTypes> for CheckedInterpret {
                 (DataTypes::Str(a), DataTypes::Str(b)) => DataTypes::Str(format!("{}{}", a, b)),
                 (DataTypes::Str(a), DataTypes::Number(b)) => DataTypes::Str(format!("{}{}", a, b)),
                 (DataTypes::Number(a), DataTypes::Str(b)) => DataTypes::Str(format!("{}{}", a, b)),
-                _ => unimplemented!("PLUS not supported for these types"),
+                (DataTypes::Array(a), DataTypes::Array(b)) => {
+                    let mut combined = a.clone();
+                    combined.extend(b.clone());
+                    DataTypes::Array(combined)
+                }
+                _ => DataTypes::Number(0.0),
             },
             TokenType::SLASH => bin_expr::<f32>(left_val, right_val, |a, b| a / b),
             TokenType::STAR => bin_expr::<f32>(left_val, right_val, |a, b| a * b),
@@ -556,6 +567,8 @@ impl ExpressionVisitor<DataTypes> for CheckedInterpret {
             TokenType::GreaterEqual => bin_expr::<f32>(left_val, right_val, |a, b| (a >= b).into()),
             TokenType::LESS => bin_expr::<f32>(left_val, right_val, |a, b| (a < b).into()),
             TokenType::LessEqual => bin_expr::<f32>(left_val, right_val, |a, b| (a <= b).into()),
+            TokenType::AND => DataTypes::Bool(bool::from(left_val) && bool::from(right_val)),
+            TokenType::OR => DataTypes::Bool(bool::from(left_val) || bool::from(right_val)),
             _ => unimplemented!("Binary operator not implemented"),
         }
     }
@@ -760,6 +773,15 @@ impl ExpressionVisitor<DataTypes> for CheckedInterpret {
         }
     }
 
+    fn visit_index_set(
+        &mut self,
+        _object: &Expression,
+        _index: &Expression,
+        value: &Expression,
+    ) -> DataTypes {
+        self.visit_expr(value)
+    }
+
     fn visit_object(&mut self, fields: &[(String, Expression)]) -> DataTypes {
         let mut map = std::collections::HashMap::new();
         for (key, expr) in fields {
@@ -836,7 +858,12 @@ impl ExpressionVisitor<DataTypes> for Interpret {
                 (DataTypes::Str(a), DataTypes::Str(b)) => DataTypes::Str(format!("{}{}", a, b)),
                 (DataTypes::Str(a), DataTypes::Number(b)) => DataTypes::Str(format!("{}{}", a, b)),
                 (DataTypes::Number(a), DataTypes::Str(b)) => DataTypes::Str(format!("{}{}", a, b)),
-                _ => unimplemented!("PLUS not supported for these types"),
+                (DataTypes::Array(a), DataTypes::Array(b)) => {
+                    let mut combined = a.clone();
+                    combined.extend(b.clone());
+                    DataTypes::Array(combined)
+                }
+                _ => DataTypes::Number(0.0),
             },
             TokenType::SLASH => bin_expr::<f32>(left_val, right_val, |a, b| a / b),
             TokenType::STAR => bin_expr::<f32>(left_val, right_val, |a, b| a * b),
@@ -880,6 +907,8 @@ impl ExpressionVisitor<DataTypes> for Interpret {
                 let r: f32 = right_val.into();
                 (l > r).into()
             }
+            TokenType::AND => DataTypes::Bool(bool::from(left_val) && bool::from(right_val)),
+            TokenType::OR => DataTypes::Bool(bool::from(left_val) || bool::from(right_val)),
             _ => unimplemented!(),
         }
     }
@@ -1139,6 +1168,13 @@ impl ExpressionVisitor<DataTypes> for Interpret {
                     DataTypes::Array(arr) => {
                         let mut new_arr = arr.clone();
                         new_arr.push(arg_vals[1].clone());
+                        if let Expression::Literal(tok) = &args[0] {
+                            if tok.token_type == TokenType::IDENTIFIER {
+                                self.environment
+                                    .borrow_mut()
+                                    .set(tok.text.clone(), DataTypes::Array(new_arr.clone()));
+                            }
+                        }
                         DataTypes::Array(new_arr)
                     }
                     _ => DataTypes::Str("push expects array as first argument".to_string()),
@@ -1289,6 +1325,10 @@ impl ExpressionVisitor<DataTypes> for Interpret {
                 if cond {
                     DataTypes::Result(Ok(Box::new(DataTypes::Bool(true))))
                 } else {
+                    self.environment
+                        .borrow_mut()
+                        .assertion_failures
+                        .push(msg.clone());
                     DataTypes::Result(Err(Box::new(DataTypes::Str(msg))))
                 }
             }
@@ -1301,14 +1341,18 @@ impl ExpressionVisitor<DataTypes> for Interpret {
                 let msg = if arg_vals.len() == 3 {
                     match &arg_vals[2] {
                         DataTypes::Str(s) => s.clone(),
-                        _ => format!("assertion failed: {:?} != {:?}", left, right),
+                        _ => format!("assertion failed: {} != {}", left, right),
                     }
                 } else {
-                    format!("assertion failed: {:?} != {:?}", left, right)
+                    format!("assertion failed: {} != {}", left, right)
                 };
                 if left == right {
                     DataTypes::Result(Ok(Box::new(DataTypes::Bool(true))))
                 } else {
+                    self.environment
+                        .borrow_mut()
+                        .assertion_failures
+                        .push(msg.clone());
                     DataTypes::Result(Err(Box::new(DataTypes::Str(msg))))
                 }
             }
@@ -1321,14 +1365,18 @@ impl ExpressionVisitor<DataTypes> for Interpret {
                 let msg = if arg_vals.len() == 3 {
                     match &arg_vals[2] {
                         DataTypes::Str(s) => s.clone(),
-                        _ => format!("assertion failed: {:?} == {:?}", left, right),
+                        _ => format!("assertion failed: {} == {}", left, right),
                     }
                 } else {
-                    format!("assertion failed: {:?} == {:?}", left, right)
+                    format!("assertion failed: {} == {}", left, right)
                 };
                 if left != right {
                     DataTypes::Result(Ok(Box::new(DataTypes::Bool(true))))
                 } else {
+                    self.environment
+                        .borrow_mut()
+                        .assertion_failures
+                        .push(msg.clone());
                     DataTypes::Result(Err(Box::new(DataTypes::Str(msg))))
                 }
             }
@@ -1838,6 +1886,44 @@ impl ExpressionVisitor<DataTypes> for Interpret {
         }
     }
 
+    fn visit_index_set(
+        &mut self,
+        object: &Expression,
+        index: &Expression,
+        value: &Expression,
+    ) -> DataTypes {
+        let val = self.visit_expr(value);
+        let idx = self.visit_expr(index);
+        if let Expression::Literal(tok) = object {
+            if tok.token_type == TokenType::IDENTIFIER {
+                let target = self.environment.borrow().get(&tok.text);
+                if let Some(target) = target {
+                    match (target, &idx) {
+                        (DataTypes::Array(mut arr), DataTypes::Number(i)) => {
+                            let i = *i as usize;
+                            if i < arr.len() {
+                                arr[i] = val.clone();
+                                self.environment
+                                    .borrow_mut()
+                                    .set(tok.text.clone(), DataTypes::Array(arr));
+                                return val;
+                            }
+                        }
+                        (DataTypes::Object(mut map), DataTypes::Str(k)) => {
+                            map.insert(k.clone(), val.clone());
+                            self.environment
+                                .borrow_mut()
+                                .set(tok.text.clone(), DataTypes::Object(map));
+                            return val;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        val
+    }
+
     fn visit_object(&mut self, fields: &[(String, Expression)]) -> DataTypes {
         let mut map = std::collections::HashMap::new();
         for (key, expr) in fields {
@@ -1942,6 +2028,7 @@ impl Interpret {
             Expression::Call(name, args) => self.visit_call(name, args),
             Expression::Array(elements) => self.visit_array(elements),
             Expression::Index(object, index) => self.visit_index(object, index),
+            Expression::IndexSet(object, index, value) => self.visit_index_set(object, index, value),
             Expression::Object(fields) => self.visit_object(fields),
             Expression::Get(object, name) => self.visit_get(object, name),
             Expression::Set(object, name, value) => self.visit_set(object, name, value),
@@ -2168,6 +2255,20 @@ impl ExpressionVisitor<String> for PrettyPrint {
         )
     }
 
+    fn visit_index_set(
+        &mut self,
+        object: &Expression,
+        index: &Expression,
+        value: &Expression,
+    ) -> String {
+        format!(
+            "(index-set {} {} {})",
+            self.visit_expr(object.clone()),
+            self.visit_expr(index.clone()),
+            self.visit_expr(value.clone())
+        )
+    }
+
     fn visit_object(&mut self, fields: &[(String, Expression)]) -> String {
         let field_strs: Vec<String> = fields
             .iter()
@@ -2225,6 +2326,9 @@ impl PrettyPrint {
             Expression::Call(name, args) => self.visit_call(&name, &args),
             Expression::Array(elements) => self.visit_array(&elements),
             Expression::Index(object, index) => self.visit_index(&object, &index),
+            Expression::IndexSet(object, index, value) => {
+                self.visit_index_set(&object, &index, &value)
+            }
             Expression::Object(fields) => self.visit_object(&fields),
             Expression::Get(object, name) => self.visit_get(&object, &name),
             Expression::Set(object, name, value) => self.visit_set(&object, &name, &value),
@@ -2300,6 +2404,7 @@ impl Parser {
                 Some(LiteralType::String(s)) => s,
                 _ => name_token.text,
             };
+            self.match_token(TokenType::COLON);
             while self.check(TokenType::NEWLINE) {
                 self.advance();
             }
@@ -2341,6 +2446,7 @@ impl Parser {
         }
         if self.match_token(TokenType::IF) {
             let condition = self.expression()?;
+            self.match_token(TokenType::COLON);
             // Consume NEWLINE after condition
             while self.check(TokenType::NEWLINE) {
                 self.advance();
@@ -2356,6 +2462,7 @@ impl Parser {
             }
 
             let else_branch = if self.match_token(TokenType::ELSE) {
+                self.match_token(TokenType::COLON);
                 // Consume NEWLINE after else
                 while self.check(TokenType::NEWLINE) {
                     self.advance();
@@ -2372,6 +2479,7 @@ impl Parser {
         }
         if self.match_token(TokenType::WHILE) {
             let condition = self.expression()?;
+            self.match_token(TokenType::COLON);
             // Consume NEWLINE after condition
             while self.check(TokenType::NEWLINE) {
                 self.advance();
@@ -2469,6 +2577,7 @@ impl Parser {
             } else {
                 None
             };
+            self.match_token(TokenType::COLON);
             // Consume optional NEWLINE
             while self.check(TokenType::NEWLINE) {
                 self.advance();
@@ -2518,11 +2627,37 @@ impl Parser {
             .is_some_and(|t| t.token_type == TokenType::EOF)
     }
 
-    fn consume(&mut self, token_type: TokenType, _message: &str) -> Result<Token, Errors> {
+    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<Token, Errors> {
         if self.check(token_type) {
             return Ok(self.tokens.next().unwrap());
         }
-        Err(Errors::NonPrimaryToken)
+        if let Some(tok) = self.tokens.peek() {
+            let found = if tok.token_type == TokenType::NEWLINE {
+                "newline".to_string()
+            } else if tok.token_type == TokenType::EOF {
+                "end of file".to_string()
+            } else if tok.token_type == TokenType::INDENT {
+                "indent".to_string()
+            } else if tok.token_type == TokenType::DEDENT {
+                "dedent".to_string()
+            } else {
+                tok.text.clone()
+            };
+            return Err(Errors::SyntaxError {
+                line: tok.span.start_line.max(tok.line),
+                col: tok.span.start_col.max(1),
+                found,
+                message: message.to_string(),
+                help: None,
+            });
+        }
+        Err(Errors::SyntaxError {
+            line: 1,
+            col: 1,
+            found: "end of file".to_string(),
+            message: message.to_string(),
+            help: None,
+        })
     }
 
     fn expression(&mut self) -> Result<Expression, Errors> {
@@ -2530,16 +2665,54 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expression, Errors> {
-        let exp = self.equality()?;
+        let exp = self.logic_or()?;
 
-        if self.match_token(TokenType::EQUAL) {
+        if let Some(eq_tok) = self.tokens.next_if(|t| t.token_type == TokenType::EQUAL) {
             let value = self.assignment()?;
-            if let Expression::Literal(token) = &exp {
-                if token.token_type == TokenType::IDENTIFIER {
-                    return Ok(Expression::Assign(token.text.clone(), Box::new(value)));
+            match exp {
+                Expression::Literal(token) if token.token_type == TokenType::IDENTIFIER => {
+                    return Ok(Expression::Assign(token.text, Box::new(value)));
+                }
+                Expression::Get(object, name) => {
+                    return Ok(Expression::Set(object, name, Box::new(value)));
+                }
+                Expression::Index(object, index) => {
+                    return Ok(Expression::IndexSet(object, index, Box::new(value)));
+                }
+                _ => {
+                    return Err(Errors::SyntaxError {
+                        line: eq_tok.span.start_line.max(eq_tok.line),
+                        col: eq_tok.span.start_col.max(1),
+                        found: "=".to_string(),
+                        message: "Invalid assignment target".to_string(),
+                        help: Some("Only variables, properties, and indexed elements can be assigned.".to_string()),
+                    });
                 }
             }
-            return Err(Errors::NonPrimaryToken);
+        }
+        Ok(exp)
+    }
+
+    fn logic_or(&mut self) -> Result<Expression, Errors> {
+        let mut exp = self.logic_and()?;
+        while let Some(token) = self
+            .tokens
+            .next_if(|token| token.token_type == TokenType::OR)
+        {
+            let right = self.logic_and()?;
+            exp = Expression::Binary(Box::new(exp), token, Box::new(right));
+        }
+        Ok(exp)
+    }
+
+    fn logic_and(&mut self) -> Result<Expression, Errors> {
+        let mut exp = self.equality()?;
+        while let Some(token) = self
+            .tokens
+            .next_if(|token| token.token_type == TokenType::AND)
+        {
+            let right = self.equality()?;
+            exp = Expression::Binary(Box::new(exp), token, Box::new(right));
         }
         Ok(exp)
     }
@@ -2722,10 +2895,40 @@ impl Parser {
                         return Err(Errors::UnterminatedGroup);
                     }
                 }
-                _ => return Err(Errors::NonPrimaryToken),
+                other => {
+                    let found = if other == TokenType::NEWLINE {
+                        "newline".to_string()
+                    } else if other == TokenType::EOF {
+                        "end of file".to_string()
+                    } else if other == TokenType::INDENT {
+                        "indent".to_string()
+                    } else if other == TokenType::DEDENT {
+                        "dedent".to_string()
+                    } else {
+                        token.text.clone()
+                    };
+                    let help = if other == TokenType::COLON {
+                        Some("Pseudo uses indentation without ':' for blocks (though optional ':' on block headers is allowed).".to_string())
+                    } else {
+                        Some("Expected an expression (identifier, literal, '(', '[', or '{').".to_string())
+                    };
+                    return Err(Errors::SyntaxError {
+                        line: token.span.start_line.max(token.line),
+                        col: token.span.start_col.max(1),
+                        found,
+                        message: "Unexpected token in expression".to_string(),
+                        help,
+                    });
+                }
             }
         }
-        Err(Errors::NonPrimaryToken)
+        Err(Errors::SyntaxError {
+            line: 1,
+            col: 1,
+            found: "end of file".to_string(),
+            message: "Unexpected end of input while parsing expression".to_string(),
+            help: None,
+        })
     }
 
     fn array_literal(&mut self) -> Result<Expression, Errors> {
@@ -2848,7 +3051,8 @@ impl Parser {
                 Ok(Expression::Function(params, Box::new(body)))
             }
         } else {
-            // Block body - expect INDENT
+            // Block body - expect INDENT (allow optional ':')
+            self.match_token(TokenType::COLON);
             // Consume optional NEWLINE
             while self.check(TokenType::NEWLINE) {
                 self.advance();

@@ -91,6 +91,37 @@ impl Diagnostic {
         }
     }
 
+    pub fn from_parser_error(err: &crate::error_handler::Errors, file: &str) -> Self {
+        match err {
+            crate::error_handler::Errors::SyntaxError {
+                line,
+                col,
+                found,
+                message,
+                help,
+            } => Diagnostic {
+                level: "error".to_string(),
+                code: "E006".to_string(),
+                message: format!("{} (found '{}')", message, found),
+                file: file.to_string(),
+                line: *line,
+                column: *col,
+                help: help
+                    .clone()
+                    .unwrap_or_else(|| "Check syntax and 4-space indentation.".to_string()),
+            },
+            other => Diagnostic {
+                level: "error".to_string(),
+                code: "E006".to_string(),
+                message: other.to_string(),
+                file: file.to_string(),
+                line: 1,
+                column: 1,
+                help: "Check syntax and 4-space indentation.".to_string(),
+            },
+        }
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
     }
@@ -102,10 +133,16 @@ impl Diagnostic {
         let padding = " ".repeat(self.column.saturating_sub(1));
         let caret = "^";
 
+        let label = if self.code == "E001" {
+            "unexpected character"
+        } else {
+            "here"
+        };
+
         format!(
-            "error[{}]: {}\n --> {}:{}:{}\n  |\n{} | {}\n  | {}{} unexpected character\n  =\n  = help: {}\n",
+            "error[{}]: {}\n --> {}:{}:{}\n  |\n{} | {}\n  | {}{} {}\n  =\n  = help: {}\n",
             self.code, self.message, self.file, self.line, self.column,
-            self.line, src_line, padding, caret, self.help
+            self.line, src_line, padding, caret, label, self.help
         )
     }
 }

@@ -149,6 +149,13 @@ pub fn build_rust_binary_from_capsule(
 
     let file_stem = capsule.project_name.replace('-', "_");
 
+    let uses_serde = rust_code.contains("serde_json::");
+    let deps_section = if uses_serde {
+        "serde_json = \"1\"\nserde = { version = \"1\", features = [\"derive\"] }"
+    } else {
+        ""
+    };
+
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
@@ -156,14 +163,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde_json = "1"
-serde = {{ version = "1", features = ["derive"] }}
+{}
 
 [[bin]]
 name = "{}"
 path = "src/main.rs"
 "#,
-        file_stem, file_stem
+        file_stem, deps_section, file_stem
     );
 
     let manifest_path = out_dir.join("Cargo.toml");
@@ -182,9 +188,19 @@ path = "src/main.rs"
     if release {
         cmd.arg("--release");
     }
-    let output = cmd
+    let mut output = cmd
         .output()
         .map_err(|e| format!("Cargo build failed to launch: {}", e))?;
+    if !output.status.success() {
+        let mut retry = std::process::Command::new("cargo");
+        retry.arg("build").arg("--manifest-path").arg(&manifest_path);
+        if release {
+            retry.arg("--release");
+        }
+        output = retry
+            .output()
+            .map_err(|e| format!("Cargo build failed to launch: {}", e))?;
+    }
     if !output.status.success() {
         return Err(format!(
             "Native binary build failed:\n{}",
@@ -564,6 +580,30 @@ fn render_rust_expr(expr: &Expression) -> String {
             if name == "pop" && args.len() == 1 {
                 return format!("pop(&mut {})", render_rust_expr(&args[0]));
             }
+            if name == "assert" && args.len() == 1 {
+                return format!("assert({}, PsudoVal::Null)", render_rust_expr(&args[0]));
+            }
+            if name == "assert_eq" && args.len() == 2 {
+                return format!(
+                    "assert_eq({}, {}, PsudoVal::Null)",
+                    render_rust_expr(&args[0]),
+                    render_rust_expr(&args[1])
+                );
+            }
+            if name == "assert_ne" && args.len() == 2 {
+                return format!(
+                    "assert_ne({}, {}, PsudoVal::Null)",
+                    render_rust_expr(&args[0]),
+                    render_rust_expr(&args[1])
+                );
+            }
+            if name == "slice" && args.len() == 2 {
+                return format!(
+                    "slice({}, {}, PsudoVal::Num(f32::MAX))",
+                    render_rust_expr(&args[0]),
+                    render_rust_expr(&args[1])
+                );
+            }
             let rendered_args = args
                 .iter()
                 .map(|a| {
@@ -608,6 +648,18 @@ fn render_rust_expr(expr: &Expression) -> String {
                 render_rust_expr(target),
                 render_rust_expr(idx)
             )
+        }
+        Expression::IndexSet(target, idx, val) => {
+            if let Expression::Literal(tok) = target.as_ref() {
+                format!(
+                    "psudo_index_set(&mut {}, &{}, {})",
+                    tok.text,
+                    render_rust_expr(idx),
+                    render_rust_expr(val)
+                )
+            } else {
+                render_rust_expr(val)
+            }
         }
         _ => "PsudoVal::Null".to_string(),
     }
@@ -674,6 +726,11 @@ pub fn psudo_add(a: &PsudoVal, b: &PsudoVal) -> PsudoVal {
         (PsudoVal::Str(x), PsudoVal::Str(y)) => PsudoVal::Str(format!("{}{}", x, y)),
         (PsudoVal::Str(x), PsudoVal::Num(y)) => PsudoVal::Str(format!("{}{}", x, y)),
         (PsudoVal::Num(x), PsudoVal::Str(y)) => PsudoVal::Str(format!("{}{}", x, y)),
+        (PsudoVal::List(x), PsudoVal::List(y)) => {
+            let mut combined = x.clone();
+            combined.extend(y.clone());
+            PsudoVal::List(combined)
+        }
         _ => PsudoVal::Null,
     }
 }
@@ -786,11 +843,32 @@ pub fn psudo_index(target: &PsudoVal, idx: &PsudoVal) -> PsudoVal {
     }
 }
 
+pub fn psudo_index_set(target: &mut PsudoVal, idx: &PsudoVal, val: PsudoVal) -> PsudoVal {
+    match target {
+        PsudoVal::List(l) => {
+            let i = match idx {
+                PsudoVal::Num(n) => *n as usize,
+                _ => 0,
+            };
+            if i < l.len() {
+                l[i] = val.clone();
+            }
+            val
+        }
+        PsudoVal::Map(m) => {
+            let k = format!("{}", idx);
+            m.insert(k, val.clone());
+            val
+        }
+        _ => val,
+    }
+}
+
 pub fn push(arr: &mut PsudoVal, item: PsudoVal) -> PsudoVal {
     if let PsudoVal::List(l) = arr {
         l.push(item);
     }
-    PsudoVal::Null
+    arr.clone()
 }
 
 pub fn pop(arr: &mut PsudoVal) -> PsudoVal {

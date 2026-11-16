@@ -194,13 +194,13 @@ pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, Strin
         Some(b) if b.exists() => b,
         Some(b) => {
             return Err(format!(
-                "Internal error: 'pseudo-engine' binary at '{}' does not exist. Please build pseudo-engine in target/release.",
+                "Internal error: 'pseudo-engine' binary at '{}' does not exist. Run 'cargo build --release' in the repository root.",
                 b.display()
             ));
         }
         None => {
             return Err(
-                "Internal error: 'pseudo-engine' binary not found. Please build pseudo-engine in target/release."
+                "Internal error: 'pseudo-engine' binary not found. Run 'cargo build --release' in the repository root (or 'cargo build --release -p pseudo-engine')."
                     .to_string(),
             );
         }

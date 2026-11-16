@@ -1,0 +1,132 @@
+[
+  {
+    "self_ref": "#/repos/core/src/main.psudo#is_server_error",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "is_server_error",
+      "line_span": [
+        4,
+        7
+      ],
+      "content_hash": "0xf5e8ffab921f49e6"
+    },
+    "signature": "fn is_server_error(status)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "is server error with params (status).",
+      "guards": "Returns true immediately if status is at least 500.",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Leaf function (zero internal calls).",
+      "control_flow": "Linear (0 loops)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#max_severity",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "max_severity",
+      "line_span": [
+        9,
+        12
+      ],
+      "content_hash": "0x4bf8a4ddf0a03de1"
+    },
+    "signature": "fn max_severity(a, b)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "max severity with params (a, b).",
+      "guards": "Returns a immediately if a exceeds b.",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Leaf function (zero internal calls).",
+      "control_flow": "Linear (0 loops)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#clamp_status",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "clamp_status",
+      "line_span": [
+        14,
+        19
+      ],
+      "content_hash": "0x3fdde1eb741a0820"
+    },
+    "signature": "fn clamp_status(status, lo, hi)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "clamp status with params (status, lo, hi).",
+      "guards": "Returns lo immediately if status is less than lo.",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Leaf function (zero internal calls).",
+      "control_flow": "Linear (0 loops)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#process_logs",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "process_logs",
+      "line_span": [
+        21,
+        41
+      ],
+      "content_hash": "0x7841f40ce404c1dd"
+    },
+    "signature": "fn process_logs(path)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "process logs with params (path).",
+      "guards": "None (unconditional entry).",
+      "side_effects": "Mutates persistent_kv (via set).",
+      "sandbox_io": "Confined to .pseudo/sandbox/: invokes [load_json, persistent_kv, set].",
+      "dependencies": "Calls clamp_status, is_server_error, max_severity; uses builtins [len, print, str]",
+      "control_flow": "Single-loop (depth 1)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#main",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "main",
+      "line_span": [
+        43,
+        46
+      ],
+      "content_hash": "0x768a4a1eeb93af20"
+    },
+    "signature": "fn main()",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "main  with params ().",
+      "guards": "None (unconditional entry).",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Calls process_logs; uses builtins [print, str]",
+      "control_flow": "Linear (0 loops)"
+    }
+  }
+]

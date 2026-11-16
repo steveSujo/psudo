@@ -1,0 +1,106 @@
+[
+  {
+    "self_ref": "#/repos/core/src/main.psudo#compute_fee",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "compute_fee",
+      "line_span": [
+        4,
+        8
+      ],
+      "content_hash": "0xbf10a2f7c54bcf28"
+    },
+    "signature": "fn compute_fee(units, rate, free_tier)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "compute fee with params (units, rate, free_tier).",
+      "guards": "Returns 0 immediately if units is at most free_tier.",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Leaf function (zero internal calls).",
+      "control_flow": "Linear (0 loops)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#apply_cap",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "apply_cap",
+      "line_span": [
+        10,
+        13
+      ],
+      "content_hash": "0x4a5691ddf2b247b3"
+    },
+    "signature": "fn apply_cap(amount, cap)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "apply cap with params (amount, cap).",
+      "guards": "Returns cap immediately if amount exceeds cap.",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Leaf function (zero internal calls).",
+      "control_flow": "Linear (0 loops)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#process_usage",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "process_usage",
+      "line_span": [
+        15,
+        30
+      ],
+      "content_hash": "0x09cd15e8bc78410d"
+    },
+    "signature": "fn process_usage(path)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "process usage with params (path).",
+      "guards": "None (unconditional entry).",
+      "side_effects": "Mutates persistent_kv (via set).",
+      "sandbox_io": "Confined to .pseudo/sandbox/: invokes [load_json, persistent_kv, set].",
+      "dependencies": "Calls compute_fee, apply_cap; uses builtins [len, print, str]",
+      "control_flow": "Single-loop (depth 1)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#main",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "main",
+      "line_span": [
+        32,
+        35
+      ],
+      "content_hash": "0xc770d143e7941c7e"
+    },
+    "signature": "fn main()",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "main  with params ().",
+      "guards": "None (unconditional entry).",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Calls process_usage; uses builtins [print, str]",
+      "control_flow": "Linear (0 loops)"
+    }
+  }
+]

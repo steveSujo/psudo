@@ -1,0 +1,106 @@
+[
+  {
+    "self_ref": "#/repos/core/src/main.psudo#clamp_val",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "clamp_val",
+      "line_span": [
+        4,
+        9
+      ],
+      "content_hash": "0xb5544eabb8b8a1fa"
+    },
+    "signature": "fn clamp_val(x, lo, hi)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "clamp val with params (x, lo, hi).",
+      "guards": "Returns lo immediately if x is less than lo.",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Leaf function (zero internal calls).",
+      "control_flow": "Linear (0 loops)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#is_over_limit",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "is_over_limit",
+      "line_span": [
+        11,
+        14
+      ],
+      "content_hash": "0x69d8c3b112206d21"
+    },
+    "signature": "fn is_over_limit(val, limit)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "is over limit with params (val, limit).",
+      "guards": "Returns true immediately if val is at least limit.",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Leaf function (zero internal calls).",
+      "control_flow": "Linear (0 loops)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#analyze_sensors",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "analyze_sensors",
+      "line_span": [
+        16,
+        37
+      ],
+      "content_hash": "0x6550f4bb1655026e"
+    },
+    "signature": "fn analyze_sensors(path, limit)",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "analyze sensors with params (path, limit).",
+      "guards": "None (unconditional entry).",
+      "side_effects": "Mutates persistent_kv (via set).",
+      "sandbox_io": "Confined to .pseudo/sandbox/: invokes [load_json, persistent_kv, set].",
+      "dependencies": "Calls clamp_val, is_over_limit; uses builtins [len, print, str]",
+      "control_flow": "Single-loop (depth 1)"
+    }
+  },
+  {
+    "self_ref": "#/repos/core/src/main.psudo#main",
+    "media_type": "pseudo_ast_stub",
+    "prov": {
+      "file_path": "src/main.psudo",
+      "class_context": "nil",
+      "base_class": "nil",
+      "symbol": "main",
+      "line_span": [
+        39,
+        42
+      ],
+      "content_hash": "0x987583866927472c"
+    },
+    "signature": "fn main()",
+    "static_impl_summary": {
+      "status": "IMPLEMENTED",
+      "stub_directive": "None",
+      "intent": "main  with params ().",
+      "guards": "None (unconditional entry).",
+      "side_effects": "Pure (local state only).",
+      "sandbox_io": "Zero filesystem operations.",
+      "dependencies": "Calls analyze_sensors; uses builtins [print, str]",
+      "control_flow": "Linear (0 loops)"
+    }
+  }
+]

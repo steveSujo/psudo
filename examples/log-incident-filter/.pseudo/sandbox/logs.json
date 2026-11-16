@@ -1,0 +1,5 @@
+[
+  {"id": 1, "status": 200, "message": "GET /health ok"},
+  {"id": 2, "status": 502, "message": "Upstream gateway timeout on worker-2"},
+  {"id": 3, "status": 500, "message": "Database connection pool exhausted"}
+]

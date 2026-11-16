@@ -1,6 +1,8 @@
 # pseudo-transpiler
 
-Bidirectional transpiler between `.psudo` and safe Rust, via a shared tree-sitter-style IR (`TsNode`). Part of the [psudo](../README.md) ecosystem. Depends on the `psudo` crate (`../pseudo-lang`).
+Bidirectional transpiler between `.psudo` and safe Rust via a shared tree-sitter-style IR (`TsNode`). Part of [psudo](../README.md). Depends on the `psudo` crate (`../pseudo-lang`).
+
+Since `.psudo` is a toy language with no ecosystem of its own, this crate lowers verified `.psudo` ASTs into standalone, zero-`.unwrap()` Rust projects so `cargo` can compile them into real binaries.
 
 ## Modules (`src/`)
 
@@ -36,4 +38,4 @@ cargo build --manifest-path pseudo-transpiler/Cargo.toml
 cargo test  --manifest-path pseudo-transpiler/Cargo.toml
 ```
 
-Tests: `tests/transpiler_tests.rs`. See [AGENTS.md](AGENTS.md), [EXPECTATIONS.md](EXPECTATIONS.md), [DEV_PLAN.md](DEV_PLAN.md).
+Tests: `tests/transpiler_tests.rs`.

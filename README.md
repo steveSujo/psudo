@@ -52,22 +52,22 @@ Trading away human readability in `pIR` buys two huge advantages for a tiny mode
 
 ### The Models (`100M` vs `33M`)
 
-- **`pseudo-100m-tq2_0.gguf` (`100.7M` parameters, `67.4 MB`) — Primary Model:**
+- **`pseudo-100m-tq2_0.gguf` (`100.7M` parameters, `47.0 MB`) — Primary Model:**
   - Architecture: `d_model = 768`, `14` layers, `12` attention heads (`4` KV heads), `FFN = 2048`, `vocab = 8,192`, `max_seq_len = 512`, `TQ2_0` ternary weights (`{-1, 0, 1}`).
-  - Designed for synthesizing atomic ~15-line `.psudo` functions (guards, arithmetic, loops, JSON/KV helpers).
-- **`pseudo-33m-tq2_0.gguf` (`33.6M` parameters, `24.3 MB`) — Rough Test / Fallback Checkpoint:**
+  - Built for synthesizing atomic ~15-line `.psudo` functions (guards, arithmetic, loops, JSON/KV helpers).
+- **`pseudo-33m-tq2_0.gguf` (`33.6M` parameters, `23.2 MB`) — Rough Test / Fallback Checkpoint:**
   - Architecture: `d_model = 512`, `8` layers, `8` heads (`4` KV heads).
-  - My earlier test model. It is still embedded inside the `psudo` binary as a zero-config smoke-test fallback, but you should use `pseudo-100m-tq2_0.gguf` for actual synthesis.
+  - My earlier test model. It is still embedded inside the `psudo` binary as a built-in smoke-test fallback, but you should use `pseudo-100m-tq2_0.gguf` for actual synthesis.
 
 ### Training & Corpus Specification
 
-The models were trained without copying weights from a teacher, using a corpus distilled from **[`Qwen/Qwen2.5-Coder-7B-Instruct-AWQ`](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-AWQ)** (base: [`Qwen/Qwen2.5-Coder-7B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct)) paired with a compiler-verified parametric generator:
-- **Teacher & Verifier Loop:** Qwen 2.5 Coder 7B (served via vLLM with ChatML prompts) and the parametric generator produce candidate functions, which are type-checked, borrow-checked, and sandbox-tested through headless `pseudo-lang` before being compiled to canonical `pIR` (`AstToPir`) and packed into `uint16` binary shards.
+I trained the models from scratch on a corpus distilled from **[`Qwen/Qwen2.5-Coder-7B-Instruct-AWQ`](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-AWQ)** (base: [`Qwen/Qwen2.5-Coder-7B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct)) paired with a synthetic generator checked by the compiler:
+- **Teacher & Verifier Loop:** Qwen 2.5 Coder 7B (served via vLLM) and the generator produce candidate functions, which are type-checked, borrow-checked, and sandbox-tested through headless `psudo` before being compiled to canonical `pIR` and packed into `uint16` shards.
 - **Corpus Breakdown (`~7,800` verified trajectories):**
   - `6,800` `<pir>` synthesis records across 6 buckets: arithmetic with zero-divisor guards, multi-branch conditionals, bounded `while` loops, recursion/helper calls, template primitives, and 15-line JSON/KV pipelines.
-  - `450` `<error>` 1-shot auto-heal repair trajectories (compiler diagnostic frame -> fixed `<pir>` patch).
-  - `300` `<zettel>` short-term context memory updates.
-  - `250` `<clarify>` ambiguity detection records (when a stub directive is underspecified).
+  - `450` `<error>` 1-shot auto-heal repair trajectories (compiler error -> fixed `<pir>` patch).
+  - `300` `<zettel>` short-term memory notes.
+  - `250` `<clarify>` ambiguity records (when a stub directive is underspecified).
 
 ---
 
@@ -79,23 +79,23 @@ The models were trained without copying weights from a teacher, using a corpus d
 
 ### 2. Build the CLI
 ```bash
-cargo build --release --manifest-path pseudo-lang/Cargo.toml
+cargo build --release
 ```
-The compiled binary is at `./pseudo-lang/target/release/psudo` (`psudo.exe` on Windows).
+The compiled binary is at `./target/release/psudo` (`target\release\psudo.exe` on Windows).
 
 ### 3. Run the Included Example Apps
 The `examples/` folder ships three pre-built workspace capsules (`psudo.bin`) with mock sandbox data in `.pseudo/sandbox/`:
 
 ```bash
 # 1. JSON Server Log Incident Filter
-./pseudo-lang/target/release/psudo check examples/log-incident-filter/psudo.bin -a -b
-./pseudo-lang/target/release/psudo build examples/log-incident-filter/psudo.bin --run
+./target/release/psudo check examples/log-incident-filter/psudo.bin -a -b
+./target/release/psudo build examples/log-incident-filter/psudo.bin --run
 
 # 2. IoT Temperature Sensor Alert Monitor
-./pseudo-lang/target/release/psudo build examples/sensor-alert-monitor/psudo.bin --run
+./target/release/psudo build examples/sensor-alert-monitor/psudo.bin --run
 
 # 3. API Tiered Quota & Billing Calculator
-./pseudo-lang/target/release/psudo build examples/quota-fee-calculator/psudo.bin --run
+./target/release/psudo build examples/quota-fee-calculator/psudo.bin --run
 ```
 
 ---
@@ -107,32 +107,32 @@ In `pseudo`, your code lives inside a single-file binary workspace capsule (`psu
 ### Step 1: Initialize a New Workspace
 ```bash
 # Templates available: blank, log, sensor, quota
-./pseudo-lang/target/release/psudo init my-app --template blank --with-docs
+./target/release/psudo init my-app --template blank --with-docs
 ```
 
 ### Step 2: Inspect Behavioral Contracts & Stubs
 To save outer-LLM tokens, `psudo` never dumps raw source code by default. Instead, inspect the behavioral contract (`YAML` or `JSON`) or stub signatures:
 ```bash
-./pseudo-lang/target/release/psudo contract my-app/psudo.bin
-./pseudo-lang/target/release/psudo vfs show my-app/psudo.bin -h
+./target/release/psudo contract my-app/psudo.bin
+./target/release/psudo vfs show my-app/psudo.bin -h
 ```
 
 ### Step 3: Declare Atomic `@stub` Functions
 Break your logic into small, single-purpose functions and add them as stubs:
 ```bash
-./pseudo-lang/target/release/psudo vfs stub my-app/psudo.bin compute_fee units rate free_tier \
+./target/release/psudo vfs stub my-app/psudo.bin compute_fee units rate free_tier \
   --directive "if units <= free_tier return 0, else return (units - free_tier) * rate"
 ```
 
 ### Step 4: Synthesize with the Local 100M Model
 ```bash
-./pseudo-lang/target/release/psudo synth my-app/psudo.bin \
+./target/release/psudo synth my-app/psudo.bin \
   --model ./pseudo-100m-tq2_0.gguf \
   --write
 ```
 Need to tweak a constant or requirement later? Re-synthesize a single symbol in one shot:
 ```bash
-./pseudo-lang/target/release/psudo synth my-app/psudo.bin \
+./target/release/psudo synth my-app/psudo.bin \
   --symbol compute_fee \
   --directive "if units <= free_tier return 0, else return (units - free_tier) * rate + 10" \
   --model ./pseudo-100m-tq2_0.gguf \
@@ -142,10 +142,10 @@ Need to tweak a constant or requirement later? Re-synthesize a single symbol in 
 ### Step 5: Verify Borrows & Compile to Native Rust
 ```bash
 # Static type check, borrow check (-b), and unresolved stub audit (-a)
-./pseudo-lang/target/release/psudo check my-app/psudo.bin -a -b
+./target/release/psudo check my-app/psudo.bin -a -b
 
 # Transpile to zero-unwrap() safe Rust, compile via cargo, and run
-./pseudo-lang/target/release/psudo build my-app/psudo.bin --run
+./target/release/psudo build my-app/psudo.bin --run
 ```
 
 ### CLI Reference & Easter Egg Security Key

@@ -1,5 +1,5 @@
 pub fn llm_cli_docs() -> &'static str {
-    include_str!("../../note/llm_cli_guide.md")
+    include_str!("llm_cli_guide.md")
 }
 //DEPRECATED: for the above fun
 // pub fn end_user_llm_agents_md(project_name: &str) -> String {

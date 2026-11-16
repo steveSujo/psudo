@@ -1,6 +1,8 @@
 # pseudo-engine
 
-Pure Rust, zero-copy inference engine and CLI for ternary-quantized (`TQ2_0`, BitNet-style) GGUF models. Part of the [psudo](../README.md) ecosystem.
+Pure-Rust, zero-copy inference engine for ternary-quantized (`TQ2_0`, 1.58-bit) GGUF models. Part of [psudo](../README.md).
+
+I wrote this in pure Rust with `memmap2` and integer-only ternary accumulation (`matmul_tq2_0`) so it runs out of the box without CUDA or C++ toolchains.
 
 ## Modules (`src/`)
 
@@ -60,6 +62,6 @@ cargo test --manifest-path pseudo-engine/Cargo.toml
 
 Suites in `tests/`: `engine_tests.rs`, `mcp_stdio_tests.rs`, `subsystem_integration_tests.rs`. Model conformance: [../tests/model_conformance](../tests/model_conformance).
 
-## Rules
+## Design Rules
 
-No `unwrap()`/`expect()` in production paths; zero-copy weight mapping; integer-only ternary accumulation. See [AGENTS.md](AGENTS.md), [EXPECTATIONS.md](EXPECTATIONS.md), [DEV_PLAN.md](DEV_PLAN.md).
+No `.unwrap()` or `.expect()` in production paths, zero-copy weight mapping via `memmap2`, and integer-only ternary accumulation.

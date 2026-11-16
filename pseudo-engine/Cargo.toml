@@ -1,0 +1,19 @@
+[package]
+name = "pseudo-engine"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+memmap2 = "0.9"
+byteorder = "1.5"
+colored = "2.1"
+crossterm = "0.27"
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+rayon = "1.10"
+psudo = { path = "../pseudo-lang" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"

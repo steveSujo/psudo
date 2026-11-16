@@ -1,0 +1,44 @@
+// Template 2: Sensor Telemetry Alert Monitor
+// Toy-language scope: clamping + threshold guard + while loop aggregation + KV store
+
+fn clamp_val(x, lo, hi)
+    if x < lo
+        return lo
+    if x > hi
+        return hi
+    return x
+
+fn is_over_limit(val, limit)
+    if val >= limit
+        return true
+    return false
+
+fn analyze_sensors(path, limit)
+    let readings = load_json(path)
+    let n = len(readings)
+    let i = 0
+    let alerts = 0
+    let sum = 0
+    let kv = persistent_kv("sensor_alerts")
+    while i < n
+        let r = readings[i]
+        let temp = clamp_val(r["temp"], 0, 200)
+        sum = sum + temp
+        if is_over_limit(temp, limit)
+            alerts = alerts + 1
+            let key = "alert_" + str(alerts)
+            set(kv, key, temp)
+            print("ALERT sensor=" + r["id"] + " temp=" + str(temp))
+        i = i + 1
+    set(kv, "alert_count", alerts)
+    if n > 0
+        let avg = sum / n
+        print("Average clamped temp: " + str(avg))
+    return alerts
+
+fn main()
+    let count = analyze_sensors("templates/.pseudo/sandbox/sensors.json", 80)
+    print("Total alerts: " + str(count))
+    return count
+
+main()

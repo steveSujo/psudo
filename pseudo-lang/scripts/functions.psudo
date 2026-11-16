@@ -1,0 +1,27 @@
+// === Functions Tests ===
+// Tests: arrow functions (=>), arrow functions with block body, closures, iterative factorial
+// Expected: all function constructs work, closures capture outer variables correctly
+// Resolver errors expected: closure variable 'add' not in scope at call site (correct Lox semantics)
+
+fn add(a, b) => a + b
+print add(2, 3)
+
+fn greet(name) =>
+    "Hello " + name
+print greet("world")
+
+// Closure
+fn makeAdder(x)
+    fn add(y) => x + y
+    return add
+let add5 = makeAdder(5)
+print add5(10)
+
+// Factorial using iterative approach
+fn fact(n)
+    let result = 1
+    while n > 1
+        result = result * n
+        n = n - 1
+    return result
+print fact(5)

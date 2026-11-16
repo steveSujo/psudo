@@ -1,0 +1,19 @@
+// === String Tests ===
+// Tests: string concatenation (+), string + number concatenation, variable interpolation
+// Expected: all string operations work, "str" + num -> "strnum"
+// No resolver errors expected
+
+print "=== String Tests ==="
+
+print "hello" + " " + "world"
+print "test" + "ing"
+
+let a = "foo"
+let b = "bar"
+print a + b
+
+print "a" + "b" + "c"
+
+let greeting = "Hello"
+let name = "World"
+print greeting + ", " + name + "!"

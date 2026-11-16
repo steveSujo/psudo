@@ -1,0 +1,11 @@
+/target/
+/vendor/llama.cpp/build/
+/models/*.gguf
+*.pdb
+.DS_Store
+.omp/
+
+/.pseudo/
+/.sandbox/
+DEV_PLAN.md
+.vault-link

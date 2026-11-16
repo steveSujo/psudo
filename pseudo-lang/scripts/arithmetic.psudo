@@ -1,0 +1,23 @@
+// === Arithmetic Tests ===
+// Tests: basic ops (+ - * /), unary -, precedence, parentheses, variable arithmetic
+// Expected: all expressions evaluate correctly with proper operator precedence
+// No resolver errors expected
+
+print "=== Arithmetic Tests ==="
+
+print 1 + 2
+print 10 - 3
+print 4 * 5
+print 20 / 4
+print -5 + 3
+
+print 1 + 2 * 3
+print (1 + 2) * 3
+
+let x = 10
+let y = 3
+print x + y
+print x - y
+print x * y
+print x / y
+print x + y * 2

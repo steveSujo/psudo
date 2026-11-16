@@ -1,0 +1,14 @@
+[package]
+name = "pseudo-transpiler"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+psudo = { path = "../pseudo-lang" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tree-sitter = "0.22"
+tree-sitter-rust = "0.21"
+
+[dev-dependencies]
+tempfile = "3.8"

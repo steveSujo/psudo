@@ -1,0 +1,8 @@
+// === Conditional Flow ===
+// Tests: if/else conditionals
+let x = 10
+if (x == 10) {
+    print "X is exactly 10"
+} else {
+    print "X is not 10"
+}

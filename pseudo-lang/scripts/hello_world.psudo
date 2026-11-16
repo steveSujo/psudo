@@ -1,0 +1,4 @@
+// === Hello World ===
+// Tests: basic print statements, string literals
+print "Hello, Pseudo-Lang & Agent Ecosystem!"
+print "Executing robust multi-paradigm test suite."

@@ -1,0 +1,48 @@
+// Template 1: JSON Server Log Incident Filter
+// Toy-language scope: atomic guards + JSON array loop + persistent KV incident log
+
+fn is_server_error(status)
+    if status >= 500
+        return true
+    return false
+
+fn max_severity(a, b)
+    if a > b
+        return a
+    return b
+
+fn clamp_status(status, lo, hi)
+    if status < lo
+        return lo
+    if status > hi
+        return hi
+    return status
+
+fn process_logs(path)
+    let logs = load_json(path)
+    let n = len(logs)
+    let i = 0
+    let incidents = 0
+    let highest = 0
+    let kv = persistent_kv("incidents")
+    while i < n
+        let entry = logs[i]
+        let st = clamp_status(entry["status"], 100, 599)
+        let msg = entry["message"]
+        if is_server_error(st)
+            incidents = incidents + 1
+            highest = max_severity(highest, st)
+            let key = "incident_" + str(incidents)
+            set(kv, key, msg)
+            print("INCIDENT [" + str(st) + "]: " + msg)
+        i = i + 1
+    set(kv, "total_incidents", incidents)
+    set(kv, "max_status", highest)
+    return incidents
+
+fn main()
+    let total = process_logs("templates/.pseudo/sandbox/logs.json")
+    print("Total incidents recorded: " + str(total))
+    return total
+
+main()

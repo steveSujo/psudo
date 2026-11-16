@@ -1,0 +1,37 @@
+// Template 3: Tiered Quota & Fee Calculator
+// Toy-language scope: tiered arithmetic guards + KV state + formatted summary
+
+fn compute_fee(units, rate, free_tier)
+    if units <= free_tier
+        return 0
+    let billable = units - free_tier
+    return billable * rate
+
+fn apply_cap(amount, cap)
+    if amount > cap
+        return cap
+    return amount
+
+fn process_usage(path)
+    let items = load_json(path)
+    let n = len(items)
+    let i = 0
+    let total_fee = 0
+    let kv = persistent_kv("billing")
+    while i < n
+        let row = items[i]
+        let raw_fee = compute_fee(row["units"], 2, 100)
+        let final_fee = apply_cap(raw_fee, 500)
+        total_fee = total_fee + final_fee
+        set(kv, row["account"], final_fee)
+        print("Account " + row["account"] + " fee=" + str(final_fee))
+        i = i + 1
+    set(kv, "total_fee", total_fee)
+    return total_fee
+
+fn main()
+    let total = process_usage("templates/.pseudo/sandbox/usage.json")
+    print("Total billed: " + str(total))
+    return total
+
+main()

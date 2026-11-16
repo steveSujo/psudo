@@ -1,0 +1,5 @@
+[
+  {"account": "acct_a", "units": 80},
+  {"account": "acct_b", "units": 250},
+  {"account": "acct_c", "units": 600}
+]

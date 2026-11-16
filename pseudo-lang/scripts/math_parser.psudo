@@ -1,0 +1,7 @@
+// === Math Parser & Functions ===
+// Tests: variable assignment, arithmetic
+let a = 40
+let b = 2
+let res = a + b
+print "Addition result:"
+print res

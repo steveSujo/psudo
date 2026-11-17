@@ -10,6 +10,8 @@ use crate::zettel::ZettelStore;
 
 use crate::user_docs::starter_helloWorld;
 
+// Masking and signing psudo.bin keeps outer agents from grepping or hand-editing raw .psudo—
+// they have to go through `psudo synth` and `psudo vfs` so the small local model owns the actual codegen.
 const MAGIC: &[u8; 9] = b"PSUDOBIN\x02";
 const VERSION: u32 = 2;
 const XOR_MASK: u8 = 0x5B; // '['

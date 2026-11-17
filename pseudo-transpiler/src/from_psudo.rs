@@ -3,6 +3,8 @@ use psudo::lexer::Lexer;
 use psudo::parser::{Expression, Parser, Statment};
 use psudo::tokens::TokenType;
 
+// Mapping `.psudo` statements directly to `TsNode` keeps the source-to-IR pass tiny
+// and predictable, with no extra type-inference passes needed up front.
 pub fn psudo_to_ir(source: &str) -> Result<TsNode, String> {
     let mut lexer = Lexer::new(source.to_string());
     let tokens = lexer.scan_tokens().map_err(|e| format!("Lexer error: {}", e))?;

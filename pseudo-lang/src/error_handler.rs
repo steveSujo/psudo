@@ -49,6 +49,8 @@ use std::{error::Error, fmt::Display, num::ParseFloatError};
 //         self.had_error = true;
 //     }
 // }
+// Keeping lexer, parser, and runtime errors in one lightweight enum avoids Box<dyn Error>
+// overhead across recursive-descent paths.
 #[derive(Debug, Clone)]
 pub enum Errors {
     //add line data

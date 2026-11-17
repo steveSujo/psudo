@@ -2,6 +2,8 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+// Bundling the ~10MB 33M-TQ2_0 GGUF inside the binary means `psudo synth` works out of the box—
+// I don't want users hunting for model weights just to test a local run.
 pub const EMBEDDED_MODEL_BYTES: &[u8] = include_bytes!("../models/pseudo-33m-tq2_0.gguf");
 pub const EMBEDDED_MODEL_NAME: &str = "pseudo-33m-tq2_0.gguf";
 

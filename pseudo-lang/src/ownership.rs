@@ -1,5 +1,7 @@
 // Ownership and borrow checking types for psudo
 // Mirrors Rust's ownership model: Owned, Borrowed(&), MutBorrowed(&mut)
+// Catching move/borrow errors up front in .psudo saves a whole compile-fail round-trip
+// when lowering to safe Rust.
 
 use std::cell::RefCell;
 use std::collections::HashMap;

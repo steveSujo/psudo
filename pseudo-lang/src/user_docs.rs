@@ -1,3 +1,5 @@
+// Embedding the CLI guide directly in the binary ensures `psudo init` drops up-to-date
+// docs into new workspaces offline, matching the exact binary version.
 pub fn llm_cli_docs() -> &'static str {
     include_str!("llm_cli_guide.md")
 }

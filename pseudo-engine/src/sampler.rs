@@ -156,6 +156,8 @@ impl PirPdaConstraint {
         if out.is_empty() { text.to_string() } else { out }
     }
 
+    // A ~100M ternary model will hallucinate syntax if left unconstrained.
+    // This PDA masks logits at every step so it can only emit structurally valid pIR tokens.
     pub fn from_prompt(
         channel: SparseChannel,
         vocab_size: usize,

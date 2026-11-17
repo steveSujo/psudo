@@ -7,6 +7,8 @@ use crate::{
     tokens::{LiteralType, Token, TokenType},
 };
 // LoxClass and LoxInstance for OOP support
+// Keeping a direct AST interpreter alongside transpilation lets me run fast sandbox checks
+// and catch runtime errors before burning a full `cargo build` cycle.
 #[derive(Debug, Clone)]
 pub struct LoxClass {
     pub name: String,

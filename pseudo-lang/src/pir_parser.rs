@@ -1,5 +1,7 @@
 // pIR (Pseudo Intermediate Representation) Parser
 // Hyper-compressed LLM-optimized bytecode-style text format
+// Single-char opcodes (`v`, `?`, `f`, `r`) squeeze logic into far fewer tokens so a tiny
+// 33M-100M model spends its context window on semantics instead of boilerplate.
 
 use crate::parser::{Expression, Statment};
 use crate::tokens::{LiteralType, Span, Token, TokenType};

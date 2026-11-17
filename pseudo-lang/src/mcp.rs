@@ -13,6 +13,8 @@ use crate::vfs::{resolve_capsule_and_vpath, WorkspaceCapsule};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+// Exposing check/synth/build/capsule tools over stdio JSON-RPC lets outer orchestrator
+// agents drive the local toolchain without shelling out or touching raw `.psudo` files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpGgufRequest {
     pub prompt: String,

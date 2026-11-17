@@ -1,3 +1,5 @@
+// Keeping Tensor as a plain shape + flat Vec<f32> avoids pulling heavy tensor-framework
+// dependencies into a minimal, pure-Rust runtime.
 pub struct Tensor {
     pub shape: Vec<usize>,
     pub data: Vec<f32>,

@@ -7,6 +7,8 @@ use pseudo_engine::engine::Engine;
 use pseudo_engine::pir_decompiler;
 use pseudo_engine::sampler::{Sampler, SparseChannel};
 
+// Separating the inference CLI from `psudo` lets me benchmark, chat, and run `--daemon`
+// directly against a GGUF file without going through the compiler or sandbox harness.
 #[derive(Parser, Debug)]
 #[command(
     name = "pseudo-engine",

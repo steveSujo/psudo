@@ -16,6 +16,8 @@ pub use psudo::blackbox::*;
 pub use psudo::codegen::*;
 pub use psudo::context::*;
 
+// Lowering through a tiny shared IR keeps `.psudo` -> Rust deterministic and free of `.unwrap()`/`.expect()`—
+// the small model focuses on logic in `.psudo`, and this crate handles the safe Rust boilerplate.
 pub fn transpile_psudo_to_rust(source: &str) -> Result<String, String> {
     let ir = psudo_to_ir(source)?;
     ir_to_rust(&ir)

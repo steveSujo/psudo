@@ -166,6 +166,7 @@ pub fn matvec_f32(out: &mut [f32], x: &[f32], weights: &[f32], in_dim: usize, _o
         }
         *val = sum;
     };
+    // Below 32k ops, Rayon thread-pool dispatch costs more than the math itself.
     if out.len() * in_dim < 32_768 {
         for item in out.iter_mut().enumerate() {
             compute(item);
@@ -175,6 +176,8 @@ pub fn matvec_f32(out: &mut [f32], x: &[f32], weights: &[f32], in_dim: usize, _o
     }
 }
 
+// Packing four ternary weights {-1, 0, 1} into one byte cuts the model down to 2 bits per weight—
+// that footprint reduction is what lets a ~100M model fit and run fast on my machine.
 const TQ2_MAP: [f32; 4] = [0.0, 1.0, -1.0, 0.0];
 
 pub fn matmul_tq2_0(
@@ -235,6 +238,7 @@ pub fn matmul_tq2_0(
         *val = sum * scale;
     };
 
+    // Below 32k ops, Rayon thread-pool dispatch costs more than the math itself.
     if out.len() * in_dim < 32_768 {
         for item in out.iter_mut().enumerate() {
             compute(item);

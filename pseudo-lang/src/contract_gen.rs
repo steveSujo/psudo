@@ -777,6 +777,8 @@ fn build_contract(
     // Compute content hash (FNV-1a 64-bit) including symbol name, params, directive, and body
     let mut hasher = FnvHasher::default();
     sym.name.hash(&mut hasher);
+    // Mixing signature, directive, and body into content_hash gives callers an exact drift signal
+    // without revealing the underlying .psudo source.
     sym.params.hash(&mut hasher);
     sym.pending_stub_directive.hash(&mut hasher);
     for line in &sym.body_lines {

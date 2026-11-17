@@ -163,6 +163,8 @@ pub fn get_daemon_health(port: u16) -> Result<DaemonHealthResponse, String> {
     serde_json::from_str(body).map_err(|e| format!("Failed to parse health response: {}", e))
 }
 
+// Cold-loading the GGUF model on every @stub kills throughput; keeping a local HTTP daemon
+// up lets me keep the weights mmap'd across calls so iterative synthesis stays snappy.
 pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, String> {
     let port = std::env::var("PSUDO_DAEMON_PORT")
         .ok()

@@ -4,6 +4,8 @@ use xxhash_rust::xxh64::xxh64;
 
 use crate::zettel::ZettelStore;
 
+// Tracking symbols as a Lamport-clocked CRDT with TTL tombstones lets concurrent edits
+// and capsule merges converge cleanly without stomping live stubs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymbolNode {
     pub id: String,

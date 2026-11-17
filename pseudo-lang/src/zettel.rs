@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use xxhash_rust::xxh64::xxh64;
 
+// Splitting context into Core, Concept, Symbol, and Episode zettels lets me pin
+// language invariants while paging only the relevant symbol notes into a tight context window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZettelKind {
     Core,

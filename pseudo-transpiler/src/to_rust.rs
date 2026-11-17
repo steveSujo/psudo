@@ -1,5 +1,7 @@
 use crate::ir::TsNode;
 
+// Lowering through a fixed `RUST_PREAMBLE` keeps emitted Rust self-contained and free
+// of external crate surprises when compiling user stubs.
 pub fn ir_to_rust(root: &TsNode) -> Result<String, String> {
     if root.kind != "source_file" {
         return Err(format!("Expected source_file root, got {}", root.kind));

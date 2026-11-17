@@ -1,6 +1,8 @@
 use crate::crdt::SymbolMapCRDT;
 use crate::zettel::ZettelStore;
 
+// Slicing CRDT and Zettel state into a hard token budget keeps prompts from overflowing
+// a small model's context window when a project grows past a few functions.
 pub struct ContextProjector {
     max_budget: usize,
 }

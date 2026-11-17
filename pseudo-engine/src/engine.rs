@@ -5,6 +5,8 @@ use crate::sampler::{PirPdaConstraint, Sampler, SparseChannel, TokenClass};
 use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
 
+// I embed tokenizer.json at compile time so the release binary works standalone
+// anywhere without hunting for training repo folders on disk.
 const EMBEDDED_TOKENIZER_BYTES: &[u8] = include_bytes!("../models/tokenizer.json");
 
 pub struct GenerationMetrics {

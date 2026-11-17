@@ -1,4 +1,6 @@
 // Backend implementation for the LSP server
+// Wiring the lexer, parser, and resolver into `tower-lsp` gives live diagnostics in any
+// editor without duplicating language analysis rules.
 
 use std::collections::HashMap;
 use std::sync::Arc;

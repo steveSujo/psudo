@@ -1,6 +1,8 @@
 use crate::ir::TsNode;
 use tree_sitter::Parser;
 
+// Reusing tree-sitter-rust here gives me a fast, forgiving AST for Rust -> `.psudo`
+// without writing a custom Rust parser from scratch.
 pub fn rust_to_ir(rust_code: &str) -> Result<TsNode, String> {
     let mut parser = Parser::new();
     parser

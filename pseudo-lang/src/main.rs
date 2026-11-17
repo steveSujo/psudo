@@ -25,6 +25,8 @@ use std::{
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const NAME: &str = env!("CARGO_PKG_NAME");
+// Raw source reveal is gated behind a key so orchestrators rely on `psudo contract` and `psudo dag`
+// instead of peeking past the black-box boundary unless a human explicitly unlocks it.
 const MAGIC_REVEAL_KEY: &str = "the slow pink elephant";
 
 fn is_valid_reveal_key(key: Option<&str>) -> bool {

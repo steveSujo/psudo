@@ -1,4 +1,5 @@
 // Resolver for static scope analysis (Chapter 11, Crafting Interpreters)
+// Resolving lexical depths up front catches shadow/unbound bugs before execution or Rust lowering.
 
 use crate::parser::{Expression, Statment};
 use std::collections::HashMap;

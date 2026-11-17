@@ -6,6 +6,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 /// Project configuration for psudo
+// Explicit size caps in psudo.toml keep synthesized code from accidentally filling disk
+// during unguarded sandbox loops.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectConfig {
     /// Sandbox configuration

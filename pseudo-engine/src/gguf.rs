@@ -88,6 +88,8 @@ impl GgufFile {
             }
         };
 
+        // I mmap the GGUF file instead of loading it into heap RAM—when VRAM/RAM is tight,
+        // cloning weights in memory just burns headroom I'd rather spend on context.
         let mmap = match unsafe { memmap2::Mmap::map(&file) } {
             Ok(m) => m,
             Err(_) => {

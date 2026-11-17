@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+// Using a flat tree-sitter-shaped TsNode lets both Rust and `.psudo` ASTs share one
+// round-trip IR without dragging full `syn` / `rustc` parser trees into the loop.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TsNode {
     pub kind: String,

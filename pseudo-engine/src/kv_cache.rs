@@ -1,3 +1,5 @@
+// Quantizing KV tensors to INT8 trades a sliver of precision for half the cache footprint—
+// essential when my context window shares tight memory with the model weights.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KVCachePrecision {
     FP32,
@@ -127,6 +129,7 @@ impl KVCache {
             self.current_len = pos + 1;
         }
     }
+    // Forking the KV cache lets me branch speculative or auto-heal runs without re-evaluating the pinned prefix.
     pub fn fork_sequence(&self, up_to_pos: usize) -> Self {
         let mut forked = Self::new_with_precision(
             self.n_layers,

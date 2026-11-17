@@ -247,6 +247,8 @@ fn handle_client(
     }
 }
 
+// Even with PDA masking, a tiny 100M model sometimes drifts on parameter names.
+// I remap generated params back to the declared signature instead of throwing away a working body.
 fn rebind_psudo_signature(psudo_code: &str, target_sym: &str, target_params: &[String]) -> String {
     let mut lines = psudo_code.lines();
     let Some(first) = lines.next() else {

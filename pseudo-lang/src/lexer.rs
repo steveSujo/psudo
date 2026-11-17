@@ -4,6 +4,8 @@ use crate::{
     tokens::{LiteralType, Span, Token, TokenType},
 };
 
+// Python-style indentation keeps `.psudo` readable with minimal punctuation—fewer syntax tokens
+// means less surface area for a small model to mess up.
 pub struct Lexer {
     source: String,
     pub token_list: Vec<Token>,

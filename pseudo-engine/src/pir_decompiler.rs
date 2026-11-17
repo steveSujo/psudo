@@ -15,6 +15,8 @@ fn strip_ctx_header(input: &str) -> (&str, &str) {
     ("", trimmed)
 }
 
+// Routing prompts through compact pIR shrinks the token budget—fewer tokens generated
+// means lower latency and less room for a small model to wander off-script.
 pub fn route_prompt(user_input: &str, force_pir: bool) -> (SparseChannel, String) {
     let trimmed = user_input.trim();
     if force_pir {

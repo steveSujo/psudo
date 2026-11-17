@@ -6,6 +6,8 @@ use std::{
 
 use crate::config::{load_project_config, resolve_sandbox_root, ProjectConfig};
 
+// Confining file ops to `.pseudo/sandbox/` with hard size caps lets me run model-generated
+// code immediately without risking host files outside the project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FSError {
     NotInSandbox,

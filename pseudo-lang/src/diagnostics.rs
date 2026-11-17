@@ -1,6 +1,8 @@
 use crate::tokens::Span;
 use serde::{Deserialize, Serialize};
 
+// Structured error codes with remediation hints let the 1-shot auto-heal loop feed exact
+// fix context back to the model instead of dumping noisy stack traces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
     E001UnrecognizedChar,

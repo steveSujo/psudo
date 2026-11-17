@@ -6,6 +6,8 @@ use crate::lexer::Lexer;
 use crate::parser::{Expression, Parser, Statment};
 use crate::resolver::Resolver;
 
+// Inferring &T / &mut T / move modes from AST usage lets `.psudo` stay free of lifetime
+// annotations while still lowering cleanly to borrow-checked Rust.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParamBorrowMode {
     ReadShared,    // &T (read-only in body)

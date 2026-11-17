@@ -1,5 +1,7 @@
 use crate::ir::TsNode;
 
+// Re-lexing and re-parsing the emitted `.psudo` before returning catches indentation
+// or syntax drift at the IR boundary instead of failing downstream.
 pub fn ir_to_psudo(root: &TsNode) -> Result<String, String> {
     let mut out = String::new();
     for child in &root.children {

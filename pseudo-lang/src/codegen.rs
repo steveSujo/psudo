@@ -62,6 +62,8 @@ pub fn transpile_psudo_to_rust(source: &str, resolve_stubs: bool) -> Result<Stri
                     if let Expression::Function(params, body) = &**expr {
                         let fn_params = params.as_slice();
                         let sym_info = digest.symbols.iter().find(|s| &s.name == fn_name);
+                        // I rename user `main` to `psudo_user_main` so the generated Rust harness can own
+                        // the real `fn main()` entrypoint and wire up sandbox/panic-free runtime setup first.
                         let rust_fn_name = if fn_name == "main" {
                             "psudo_user_main"
                         } else {

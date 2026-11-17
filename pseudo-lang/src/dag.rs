@@ -24,6 +24,8 @@ impl std::fmt::Display for CycleError {
 
 impl std::error::Error for CycleError {}
 
+// Extracting call edges into a topological DAG lets me synthesize and verify leaf stubs
+// before callers, so broken dependencies don't cascade into multi-stub failures.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TaskDAG {
     pub tasks: HashMap<String, TaskMetadata>,

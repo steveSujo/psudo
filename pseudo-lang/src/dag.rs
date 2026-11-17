@@ -1,6 +1,6 @@
 use crate::vfs::WorkspaceCapsule;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskMetadata {
@@ -72,32 +72,41 @@ impl TaskDAG {
             }
         }
 
-        let mut queue = VecDeque::new();
-        for (id, &deg) in &in_degree {
-            if deg == 0 {
-                queue.push_back(id.clone());
-            }
+        for list in adj.values_mut() {
+            list.sort();
         }
 
-        let mut sorted_queue: Vec<String> = queue.into();
-        sorted_queue.sort_by(|a, b| {
-            let pa = self.tasks.get(a).map(|t| t.priority).unwrap_or(0);
-            let pb = self.tasks.get(b).map(|t| t.priority).unwrap_or(0);
-            pb.cmp(&pa)
-        });
-        let mut queue: VecDeque<String> = sorted_queue.into();
+        let mut ready: Vec<String> = in_degree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let sort_ready = |vec: &mut Vec<String>| {
+            vec.sort_by(|a, b| {
+                let pa = self.tasks.get(a).map(|t| t.priority).unwrap_or(0);
+                let pb = self.tasks.get(b).map(|t| t.priority).unwrap_or(0);
+                pb.cmp(&pa).then_with(|| a.cmp(b))
+            });
+        };
+        sort_ready(&mut ready);
 
         let mut result = Vec::new();
 
-        while let Some(curr) = queue.pop_front() {
+        while !ready.is_empty() {
+            let curr = ready.remove(0);
             result.push(curr.clone());
             if let Some(neighbors) = adj.get(&curr) {
+                let mut unlocked = false;
                 for neighbor in neighbors {
                     let deg = in_degree.get_mut(neighbor).unwrap();
                     *deg -= 1;
                     if *deg == 0 {
-                        queue.push_back(neighbor.clone());
+                        ready.push(neighbor.clone());
+                        unlocked = true;
                     }
+                }
+                if unlocked {
+                    sort_ready(&mut ready);
                 }
             }
         }
@@ -117,9 +126,23 @@ impl TaskDAG {
     pub fn render_mermaid(&self) -> String {
         let mut out = String::from("graph TD\n");
         let mut sorted_tasks: Vec<&TaskMetadata> = self.tasks.values().collect();
-        sorted_tasks.sort_by_key(|t| std::cmp::Reverse(t.priority));
+        sorted_tasks.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.id.cmp(&b.id)));
+
+        let mut has_incoming_or_outgoing: std::collections::HashSet<&str> =
+            std::collections::HashSet::new();
+        for task in &sorted_tasks {
+            if !task.prerequisites.is_empty() {
+                has_incoming_or_outgoing.insert(task.id.as_str());
+                for prereq in &task.prerequisites {
+                    has_incoming_or_outgoing.insert(prereq.as_str());
+                }
+            }
+        }
 
         for task in &sorted_tasks {
+            if !has_incoming_or_outgoing.contains(task.id.as_str()) {
+                out.push_str(&format!("    {}\n", task.id));
+            }
             for prereq in &task.prerequisites {
                 out.push_str(&format!("    {} --> {}\n", prereq, task.id));
             }
@@ -131,12 +154,16 @@ impl TaskDAG {
         let mut out = String::from(
             "digraph TaskDAG {\n    rankdir=TD;\n    node [shape=box, style=rounded];\n",
         );
-        for task in self.tasks.values() {
+        let mut sorted_tasks: Vec<&TaskMetadata> = self.tasks.values().collect();
+        sorted_tasks.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.id.cmp(&b.id)));
+        for task in sorted_tasks {
             out.push_str(&format!(
                 "    \"{}\" [label=\"{}\\nPriority: {}\"];\n",
                 task.id, task.id, task.priority
             ));
-            for prereq in &task.prerequisites {
+            let mut prereqs = task.prerequisites.clone();
+            prereqs.sort();
+            for prereq in prereqs {
                 out.push_str(&format!("    \"{}\" -> \"{}\";\n", prereq, task.id));
             }
         }
@@ -146,17 +173,99 @@ impl TaskDAG {
 
     pub fn scan_from_capsule(capsule: &WorkspaceCapsule) -> Self {
         let mut dag = Self::new();
-        for content in capsule.virtual_files.values() {
+        let mut fn_bodies: HashMap<String, Vec<String>> = HashMap::new();
+
+        for (vpath, content) in &capsule.virtual_files {
+            if !vpath.ends_with(".psudo") && !vpath.ends_with(".pseudo") {
+                continue;
+            }
+            let mut current_fn: Option<String> = None;
             for line in content.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("fn ") {
-                    if let Some(name_end) = trimmed[3..].find('(') {
-                        let task_id = trimmed[3..3 + name_end].trim();
-                        dag.add_task(task_id, &[], 5, 300, 1);
+                if !line.starts_with(' ') && !line.starts_with('\t') {
+                    if let Some(after_fn) = trimmed.strip_prefix("fn ") {
+                        if let Some(name_end) = after_fn.find('(') {
+                            let task_id = after_fn[..name_end].trim().to_string();
+                            fn_bodies.entry(task_id.clone()).or_default();
+                            current_fn = Some(task_id);
+                            continue;
+                        }
                     }
+                    if !trimmed.is_empty() {
+                        current_fn = None;
+                    }
+                } else if let Some(ref fn_name) = current_fn {
+                    fn_bodies
+                        .entry(fn_name.clone())
+                        .or_default()
+                        .push(trimmed.to_string());
                 }
             }
         }
+
+        let all_fns: Vec<String> = fn_bodies.keys().cloned().collect();
+        for (fn_name, body_lines) in &fn_bodies {
+            let mut prereqs: Vec<String> = Vec::new();
+            let mut search_texts = body_lines.clone();
+            if let Some(traces) = capsule.stub_traces.get(fn_name) {
+                for tr in traces {
+                    if !tr.directive.is_empty() {
+                        search_texts.push(tr.directive.clone());
+                    }
+                }
+            }
+            for candidate in &all_fns {
+                if candidate == fn_name {
+                    continue;
+                }
+                let call_pat = format!("{}(", candidate);
+                let found = search_texts.iter().any(|t| {
+                    t.match_indices(&call_pat).any(|(idx, _)| {
+                        idx == 0
+                            || !t.as_bytes()[idx - 1].is_ascii_alphanumeric()
+                                && t.as_bytes()[idx - 1] != b'_'
+                    })
+                });
+                if found && !prereqs.contains(candidate) {
+                    prereqs.push(candidate.clone());
+                }
+            }
+            prereqs.sort();
+            let prereq_refs: Vec<&str> = prereqs.iter().map(String::as_str).collect();
+            dag.add_task(fn_name, &prereq_refs, 5, 300, 1);
+        }
         dag
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dag_scan_extracts_call_edges_and_renders_mermaid() {
+        let mut cap = WorkspaceCapsule::new_empty("csv-stats");
+        cap.virtual_files.insert(
+            "src/main.psudo".to_string(),
+            r#"fn min_val(a, b)
+    return a
+
+fn max_val(a, b)
+    return b
+
+fn spread(a, b)
+    return max_val(a, b) - min_val(a, b)
+"#
+            .to_string(),
+        );
+        let dag = TaskDAG::scan_from_capsule(&cap);
+        let spread = dag.tasks.get("spread").unwrap();
+        assert_eq!(spread.prerequisites, vec!["max_val", "min_val"]);
+        let mermaid = dag.render_mermaid();
+        assert!(mermaid.contains("max_val --> spread"));
+        assert!(mermaid.contains("min_val --> spread"));
+        let dot = dag.render_dot();
+        assert!(dot.contains("\"max_val\" -> \"spread\";"));
+        assert!(dot.contains("\"min_val\" -> \"spread\";"));
     }
 }

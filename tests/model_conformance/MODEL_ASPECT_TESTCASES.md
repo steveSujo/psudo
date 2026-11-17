@@ -1,6 +1,6 @@
 # Multi-Aspect Prompt Conformance & Evaluation Catalog (`MODEL_ASPECT_TESTCASES.md`)
 
-> **Purpose:** Canonical 8-category, 80-prompt conformance specification covering non-code model aspects: `<talk>` SVO Caveman explanations & ecosystem architecture tradeoffs, `<fim>` inline prefix/suffix completions, 1-shot `<error>` Auto-Heal (`heal@2` across syntax, arity, resolver, borrow checker `-b`, and sandbox logic traps), `<zettel>` semantic engram pager lifecycle (`+z`, `!z`, `-z`), and Hybrid `<talk>` + `<pir>` symbol-span patches (`+`, `!`, `-`).
+> **Purpose:** Canonical 8-category, 80-prompt conformance specification covering non-code model aspects: `<talk>` SVO Caveman explanations & ecosystem architecture tradeoffs, `<fim>` inline prefix/suffix completions, 1-shot `<error>` Auto-Heal (`heal@2` across syntax, arity, resolver, borrow checker, and sandbox logic traps), `<zettel>` semantic engram pager lifecycle (`+z`, `!z`, `-z`), and Hybrid `<talk>` + `<pir>` symbol-span patches (`+`, `!`, `-`).
 
 ---
 
@@ -1119,7 +1119,7 @@ f sum_up (limit_n) [
 ]
 ```
 
-### MA-06-03: Heal Array Use-After-Move Borrow Error (`psudo -b`)
+### MA-06-03: Heal Array Use-After-Move Borrow Error (`psudo`)
 - **Category**: `ASP-06`
 - **Aspect**: `auto_heal`
 - **Prompt**: `<error>[src/buf.psudo:3:7] E_BORROW: Borrow check error: Cannot use value after move</error>\nlet pkt = [10, 20, 30]\nlet moved_pkt = pkt\nprint pkt[0]`
@@ -1140,7 +1140,7 @@ let moved_pkt = pkt
 print moved_pkt[0]
 ```
 
-### MA-06-04: Heal Object Double-Move Borrow Error (`psudo -b`)
+### MA-06-04: Heal Object Double-Move Borrow Error (`psudo`)
 - **Category**: `ASP-06`
 - **Aspect**: `auto_heal`
 - **Prompt**: `<error>[src/cfg.psudo:3:13] E_BORROW: Borrow check error: Cannot use value after move</error>\nlet cfg = {port: 8080}\nlet primary_cfg = cfg\nlet backup_cfg = cfg\nprint backup_cfg.port`
@@ -1162,7 +1162,7 @@ let primary_cfg = cfg
 print primary_cfg.port
 ```
 
-### MA-06-05: Heal Class Instance Use-After-Move (`psudo --pir -b`)
+### MA-06-05: Heal Class Instance Use-After-Move (`psudo --pir`)
 - **Category**: `ASP-06`
 - **Aspect**: `auto_heal`
 - **Prompt**: `<error>[src/wallet.psudo:6:3] E_BORROW: Borrow check error: Cannot use value after move</error>\nc BoxVal [\n  f read_v (inst num_x) [\n    r (* num_x 3)\n  ]\n]\nv b1 (BoxVal)\nv b2 b1\nv b3 b1\np (m b3 read_v (9))`
@@ -1190,7 +1190,7 @@ c BoxVal [
 ]
 ```
 
-### MA-06-06: Heal Reassign-After-Move Borrow Error (`psudo -b`)
+### MA-06-06: Heal Reassign-After-Move Borrow Error (`psudo`)
 - **Category**: `ASP-06`
 - **Aspect**: `auto_heal`
 - **Prompt**: `<error>[src/queue.psudo:3:1] E_BORROW: Borrow check error on assign: Cannot use value after move</error>\nlet batch = [4, 8]\nlet active_batch = batch\nbatch = [12, 16]\nprint active_batch[1]`

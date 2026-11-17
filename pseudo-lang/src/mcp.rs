@@ -75,7 +75,7 @@ Toolchain Commands:
   psudo vfs write [DIR] [FILE]       Write or update virtual file
   psudo vfs rm [DIR] [FILE]          Remove virtual file
   psudo contract <CAPSULE>           Behavioral contracts (YAML/JSON, no raw code leakage)
-  psudo check <CAPSULE> [-b]         Verify syntax, borrows, and unresolved stubs
+  psudo check <CAPSULE> [-a]         Verify syntax, borrows, and unresolved stubs
   psudo synth <CAPSULE> [--write]    Black-box pIR/GGUF stub synthesis into virtual capsule
   psudo transpile <CAPSULE>          Lower virtual capsule entrypoint to zero-unwrap safe Rust source
   psudo build <CAPSULE> [--run]      Compile native verified Rust binary artifact from capsule via cargo

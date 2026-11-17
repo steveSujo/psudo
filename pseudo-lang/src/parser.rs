@@ -335,11 +335,17 @@ impl CheckedInterpret {
     }
 
     fn execute_with_borrows(&mut self, stmt: &Statment) -> Option<DataTypes> {
+        if let Some(ret) = self.environment.borrow().return_val.clone() {
+            return Some(ret);
+        }
         match stmt {
             Statment::ExpressionStatement(expr) => Some(self.visit_expr(expr)),
             Statment::PrintStatement(expr) => {
                 let val = self.visit_expr(expr);
-                println!("{val}");
+                match &val {
+                    DataTypes::Str(s) => println!("{s}"),
+                    other => println!("{other}"),
+                }
                 Some(val)
             }
             Statment::LetStatement(name, initializer) => {
@@ -407,6 +413,9 @@ impl CheckedInterpret {
                     self.execute_with_borrows(body);
                     let mut env = self.environment.borrow_mut();
                     env.pop_scope();
+                    if let Some(ret) = env.return_val.clone() {
+                        return Some(ret);
+                    }
                 }
                 None
             }
@@ -449,6 +458,9 @@ impl CheckedInterpret {
                 for stmt in statements {
                     if let Some(v) = self.execute_with_borrows(stmt) {
                         last_val = Some(v)
+                    }
+                    if self.environment.borrow().return_val.is_some() {
+                        break;
                     }
                 }
                 let mut env = self.environment.borrow_mut();
@@ -501,7 +513,7 @@ impl CheckedInterpret {
                     .define(class_name, DataTypes::Class(lox_class));
                 None
             }
-            Statment::TestStatement(_, body) => self.execute_with_borrows(body),
+            Statment::TestStatement(_, _) => None,
         }
     }
 
@@ -734,17 +746,25 @@ impl ExpressionVisitor<DataTypes> for CheckedInterpret {
                         .borrow_mut()
                         .vars
                         .extend(new_env.vars.clone());
-                    interp
-                        .execute_with_borrows(&body)
-                        .unwrap_or(DataTypes::Number(0.0))
+                    let result = interp.execute_with_borrows(&body);
+                    let explicit_ret = interp.environment.borrow_mut().return_val.take();
+                    explicit_ret.or(result).unwrap_or(DataTypes::Number(0.0))
                 }
                 _ => {
-                    eprintln!("'{name}' is not a function or class");
+                    let msg = format!("'{name}' is not a function or class");
+                    eprintln!("{msg}");
+                    self.environment.borrow_mut().record_error(msg);
                     DataTypes::Number(0.0)
                 }
             }
         } else {
-            eprintln!("Undefined function or class '{name}'");
+            drop(env);
+            if let Some(val) = Interpret::default().eval_builtin_call(name, args, &arg_vals) {
+                return val;
+            }
+            let msg = format!("Undefined function or class '{name}'");
+            eprintln!("{msg}");
+            self.environment.borrow_mut().record_error(msg);
             DataTypes::Number(0.0)
         }
     }
@@ -812,11 +832,13 @@ impl ExpressionVisitor<DataTypes> for CheckedInterpret {
     }
 
     fn visit_return(&mut self, value: &Option<Box<Expression>>) -> DataTypes {
-        if let Some(expr) = value {
+        let val = if let Some(expr) = value {
             self.visit_expr(expr)
         } else {
             DataTypes::Number(0.0)
-        }
+        };
+        self.environment.borrow_mut().return_val = Some(val.clone());
+        val
     }
 
     fn visit_set(&mut self, object: &Expression, name: &str, value: &Expression) -> DataTypes {
@@ -1033,7 +1055,188 @@ impl ExpressionVisitor<DataTypes> for Interpret {
             return result.unwrap_or(DataTypes::Number(0.0));
         }
 
-        // Built-in functions
+        if let Some(val) = self.eval_builtin_call(name, args, &arg_vals) {
+            return val;
+        }
+        DataTypes::Str(format!("Unknown function: {}", name))
+    }
+
+    fn visit_array(&mut self, elements: &[Expression]) -> DataTypes {
+        DataTypes::Array(elements.iter().map(|e| self.visit_expr(e)).collect())
+    }
+
+    fn visit_index(&mut self, object: &Expression, index: &Expression) -> DataTypes {
+        let obj = self.visit_expr(object);
+        let idx = self.visit_expr(index);
+        match (&obj, &idx) {
+            (DataTypes::Array(arr), DataTypes::Number(i)) => {
+                let i = *i as usize;
+                if i < arr.len() {
+                    arr[i].clone()
+                } else {
+                    DataTypes::Str(format!("Index out of bounds: {}", i))
+                }
+            }
+            (DataTypes::Object(map), DataTypes::Str(key)) => {
+                map.get(key).cloned().unwrap_or(DataTypes::Number(0.0))
+            }
+            _ => DataTypes::Str("Invalid index operation".to_string()),
+        }
+    }
+
+    fn visit_index_set(
+        &mut self,
+        object: &Expression,
+        index: &Expression,
+        value: &Expression,
+    ) -> DataTypes {
+        let val = self.visit_expr(value);
+        let idx = self.visit_expr(index);
+        if let Expression::Literal(tok) = object {
+            if tok.token_type == TokenType::IDENTIFIER {
+                let target = self.environment.borrow().get(&tok.text);
+                if let Some(target) = target {
+                    match (target, &idx) {
+                        (DataTypes::Array(mut arr), DataTypes::Number(i)) => {
+                            let i = *i as usize;
+                            if i < arr.len() {
+                                arr[i] = val.clone();
+                                self.environment
+                                    .borrow_mut()
+                                    .set(tok.text.clone(), DataTypes::Array(arr));
+                                return val;
+                            }
+                        }
+                        (DataTypes::Object(mut map), DataTypes::Str(k)) => {
+                            map.insert(k.clone(), val.clone());
+                            self.environment
+                                .borrow_mut()
+                                .set(tok.text.clone(), DataTypes::Object(map));
+                            return val;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        val
+    }
+
+    fn visit_object(&mut self, fields: &[(String, Expression)]) -> DataTypes {
+        let mut map = std::collections::HashMap::new();
+        for (key, expr) in fields {
+            map.insert(key.clone(), self.visit_expr(expr));
+        }
+        DataTypes::Object(map)
+    }
+
+    fn visit_get(&mut self, object: &Expression, name: &str) -> DataTypes {
+        let obj = self.visit_expr(object);
+        match obj {
+            DataTypes::Object(map) => map.get(name).cloned().unwrap_or(DataTypes::Number(0.0)),
+            DataTypes::Instance(instance) => instance
+                .get(name)
+                .unwrap_or(DataTypes::Str("Property not found".to_string())),
+            _ => DataTypes::Str("Not an object".to_string()),
+        }
+    }
+    fn visit_function(&mut self, params: &[String], body: &Statment) -> DataTypes {
+        let parent_env = self.environment.clone();
+        let capture = Rc::new(RefCell::new(Environment::with_parent(
+            HashMap::new(),
+            parent_env,
+        )));
+        DataTypes::Function {
+            params: params.to_vec(),
+            body: Box::new(body.clone()),
+            capture,
+        }
+    }
+
+    fn visit_return(&mut self, value: &Option<Box<Expression>>) -> DataTypes {
+        let val = match value {
+            Some(expr) => self.visit_expr(expr),
+            None => DataTypes::Number(0.0),
+        };
+        self.environment.borrow_mut().return_val = Some(val.clone());
+        val
+    }
+
+    fn visit_set(&mut self, object: &Expression, name: &str, value: &Expression) -> DataTypes {
+        let obj = self.visit_expr(object);
+        let val = self.visit_expr(value);
+        match obj {
+            DataTypes::Object(mut map) => {
+                map.insert(name.to_string(), val.clone());
+                val
+            }
+            _ => DataTypes::Str("Not an object".to_string()),
+        }
+    }
+
+    fn visit_this(&mut self) -> DataTypes {
+        DataTypes::Str("this not bound".to_string())
+    }
+
+    fn visit_super(&mut self, method: &str) -> DataTypes {
+        DataTypes::Str(format!("super.{} not bound", method))
+    }
+
+    fn visit_super_call(&mut self, method: &str, args: &[Expression]) -> DataTypes {
+        // Evaluate arguments
+        let arg_vals: Vec<DataTypes> = args.iter().map(|a| self.visit_expr(a)).collect();
+
+        // Get 'this' from environment (should be the current instance)
+        let this_instance = match self.environment.borrow().get("this") {
+            Some(DataTypes::Instance(instance)) => instance,
+            _ => return DataTypes::Str("super call: 'this' not bound".to_string()),
+        };
+
+        // Get superclass from the instance's class
+        if let Some(superclass) = &this_instance.class.superclass {
+            if let Some(super_method) = superclass.find_method(method) {
+                // Bind 'this' to the current instance
+                let mut new_env =
+                    Environment::with_parent(HashMap::new(), super_method.closure.clone());
+                for (i, param) in super_method.params.iter().enumerate() {
+                    if i < arg_vals.len() {
+                        new_env.define(param.clone(), arg_vals[i].clone());
+                    }
+                }
+                let old_env = self.environment.clone();
+                self.environment = Rc::new(RefCell::new(new_env));
+                let result = self.execute(&super_method.body);
+                self.environment = old_env;
+                return result.unwrap_or(DataTypes::Number(0.0));
+            }
+        }
+
+        DataTypes::Str(format!("super method '{}' not found", method))
+    }
+}
+
+impl Interpret {
+    pub fn eval_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[Expression],
+        arg_vals: &[DataTypes],
+    ) -> Option<DataTypes> {
+        let res = self.eval_builtin_inner(name, args, arg_vals);
+        if let DataTypes::Str(ref s) = res {
+            if s.starts_with("__PSUDO_UNKNOWN_FN__:") {
+                return None;
+            }
+        }
+        Some(res)
+    }
+
+    fn eval_builtin_inner(
+        &mut self,
+        name: &str,
+        args: &[Expression],
+        arg_vals: &[DataTypes],
+    ) -> DataTypes {
         match name {
             "readFile" => {
                 if arg_vals.len() != 1 {
@@ -1860,164 +2063,9 @@ impl ExpressionVisitor<DataTypes> for Interpret {
                 }
                 DataTypes::Bool(bool::from(arg_vals[0].clone()))
             }
-            _ => DataTypes::Str(format!("Unknown function: {}", name)),
+            _ => DataTypes::Str(format!("__PSUDO_UNKNOWN_FN__:{}", name)),
         }
     }
-    fn visit_array(&mut self, elements: &[Expression]) -> DataTypes {
-        DataTypes::Array(elements.iter().map(|e| self.visit_expr(e)).collect())
-    }
-
-    fn visit_index(&mut self, object: &Expression, index: &Expression) -> DataTypes {
-        let obj = self.visit_expr(object);
-        let idx = self.visit_expr(index);
-        match (&obj, &idx) {
-            (DataTypes::Array(arr), DataTypes::Number(i)) => {
-                let i = *i as usize;
-                if i < arr.len() {
-                    arr[i].clone()
-                } else {
-                    DataTypes::Str(format!("Index out of bounds: {}", i))
-                }
-            }
-            (DataTypes::Object(map), DataTypes::Str(key)) => {
-                map.get(key).cloned().unwrap_or(DataTypes::Number(0.0))
-            }
-            _ => DataTypes::Str("Invalid index operation".to_string()),
-        }
-    }
-
-    fn visit_index_set(
-        &mut self,
-        object: &Expression,
-        index: &Expression,
-        value: &Expression,
-    ) -> DataTypes {
-        let val = self.visit_expr(value);
-        let idx = self.visit_expr(index);
-        if let Expression::Literal(tok) = object {
-            if tok.token_type == TokenType::IDENTIFIER {
-                let target = self.environment.borrow().get(&tok.text);
-                if let Some(target) = target {
-                    match (target, &idx) {
-                        (DataTypes::Array(mut arr), DataTypes::Number(i)) => {
-                            let i = *i as usize;
-                            if i < arr.len() {
-                                arr[i] = val.clone();
-                                self.environment
-                                    .borrow_mut()
-                                    .set(tok.text.clone(), DataTypes::Array(arr));
-                                return val;
-                            }
-                        }
-                        (DataTypes::Object(mut map), DataTypes::Str(k)) => {
-                            map.insert(k.clone(), val.clone());
-                            self.environment
-                                .borrow_mut()
-                                .set(tok.text.clone(), DataTypes::Object(map));
-                            return val;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        val
-    }
-
-    fn visit_object(&mut self, fields: &[(String, Expression)]) -> DataTypes {
-        let mut map = std::collections::HashMap::new();
-        for (key, expr) in fields {
-            map.insert(key.clone(), self.visit_expr(expr));
-        }
-        DataTypes::Object(map)
-    }
-
-    fn visit_get(&mut self, object: &Expression, name: &str) -> DataTypes {
-        let obj = self.visit_expr(object);
-        match obj {
-            DataTypes::Object(map) => map.get(name).cloned().unwrap_or(DataTypes::Number(0.0)),
-            DataTypes::Instance(instance) => instance
-                .get(name)
-                .unwrap_or(DataTypes::Str("Property not found".to_string())),
-            _ => DataTypes::Str("Not an object".to_string()),
-        }
-    }
-    fn visit_function(&mut self, params: &[String], body: &Statment) -> DataTypes {
-        let parent_env = self.environment.clone();
-        let capture = Rc::new(RefCell::new(Environment::with_parent(
-            HashMap::new(),
-            parent_env,
-        )));
-        DataTypes::Function {
-            params: params.to_vec(),
-            body: Box::new(body.clone()),
-            capture,
-        }
-    }
-
-    fn visit_return(&mut self, value: &Option<Box<Expression>>) -> DataTypes {
-        let val = match value {
-            Some(expr) => self.visit_expr(expr),
-            None => DataTypes::Number(0.0),
-        };
-        self.environment.borrow_mut().return_val = Some(val.clone());
-        val
-    }
-
-    fn visit_set(&mut self, object: &Expression, name: &str, value: &Expression) -> DataTypes {
-        let obj = self.visit_expr(object);
-        let val = self.visit_expr(value);
-        match obj {
-            DataTypes::Object(mut map) => {
-                map.insert(name.to_string(), val.clone());
-                val
-            }
-            _ => DataTypes::Str("Not an object".to_string()),
-        }
-    }
-
-    fn visit_this(&mut self) -> DataTypes {
-        DataTypes::Str("this not bound".to_string())
-    }
-
-    fn visit_super(&mut self, method: &str) -> DataTypes {
-        DataTypes::Str(format!("super.{} not bound", method))
-    }
-
-    fn visit_super_call(&mut self, method: &str, args: &[Expression]) -> DataTypes {
-        // Evaluate arguments
-        let arg_vals: Vec<DataTypes> = args.iter().map(|a| self.visit_expr(a)).collect();
-
-        // Get 'this' from environment (should be the current instance)
-        let this_instance = match self.environment.borrow().get("this") {
-            Some(DataTypes::Instance(instance)) => instance,
-            _ => return DataTypes::Str("super call: 'this' not bound".to_string()),
-        };
-
-        // Get superclass from the instance's class
-        if let Some(superclass) = &this_instance.class.superclass {
-            if let Some(super_method) = superclass.find_method(method) {
-                // Bind 'this' to the current instance
-                let mut new_env =
-                    Environment::with_parent(HashMap::new(), super_method.closure.clone());
-                for (i, param) in super_method.params.iter().enumerate() {
-                    if i < arg_vals.len() {
-                        new_env.define(param.clone(), arg_vals[i].clone());
-                    }
-                }
-                let old_env = self.environment.clone();
-                self.environment = Rc::new(RefCell::new(new_env));
-                let result = self.execute(&super_method.body);
-                self.environment = old_env;
-                return result.unwrap_or(DataTypes::Number(0.0));
-            }
-        }
-
-        DataTypes::Str(format!("super method '{}' not found", method))
-    }
-}
-
-impl Interpret {
     pub fn visit_expr(&mut self, e: &Expression) -> DataTypes {
         match e {
             Expression::Binary(left, op, right) => self.visit_binary(left, op, right),
@@ -2048,7 +2096,10 @@ impl Interpret {
             Statment::ExpressionStatement(exp) => Some(self.visit_expr(exp)),
             Statment::PrintStatement(exp) => {
                 let val = self.visit_expr(exp);
-                println!("{}", val);
+                match &val {
+                    DataTypes::Str(s) => println!("{s}"),
+                    other => println!("{other}"),
+                }
                 None
             }
             Statment::LetStatement(name, exp) => {

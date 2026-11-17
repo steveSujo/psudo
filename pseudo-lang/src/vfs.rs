@@ -407,6 +407,149 @@ deny_write = []
         Ok(())
     }
 
+    pub fn upsert_test(
+        &mut self,
+        vpath: &str,
+        test_name: &str,
+        assertions: &[String],
+    ) -> Result<(), String> {
+        if assertions.is_empty() {
+            return Err("At least one assertion is required for upsert_test".to_string());
+        }
+        let escaped = test_name.replace('"', "\\\"");
+        let header = format!("test \"{}\"", escaped);
+        let mut block = format!("{}\n", header);
+        for a in assertions {
+            for line in a.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    block.push_str(&format!("    {}\n", trimmed));
+                }
+            }
+        }
+
+        let src = self
+            .get_file(vpath)
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        let lines: Vec<&str> = src.lines().collect();
+        let mut start_line = None;
+        let mut end_line = lines.len();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if start_line.is_none() {
+                if !line.starts_with(' ')
+                    && !line.starts_with('\t')
+                    && (trimmed == header || trimmed == format!("{}:", header))
+                {
+                    start_line = Some(idx);
+                }
+            } else if !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.is_empty() {
+                end_line = idx;
+                break;
+            }
+        }
+
+        let new_src = if let Some(s) = start_line {
+            let mut out = Vec::new();
+            out.extend(lines[..s].iter().map(|l| l.to_string()));
+            out.push(block.trim_end().to_string());
+            if end_line < lines.len() {
+                out.extend(lines[end_line..].iter().map(|l| l.to_string()));
+            }
+            out.join("\n") + "\n"
+        } else if src.trim().is_empty() {
+            block
+        } else {
+            format!("{}\n\n{}", src.trim_end(), block)
+        };
+
+        self.set_file(vpath, new_src)?;
+        self.recompute_context()?;
+        Ok(())
+    }
+
+    pub fn wire_entrypoint(
+        &mut self,
+        vpath: &str,
+        entry_fn: &str,
+        stmts: &[String],
+        return_expr: Option<&str>,
+    ) -> Result<(), String> {
+        if stmts.is_empty() && return_expr.is_none() {
+            return Err("At least one statement or --return expression is required".to_string());
+        }
+        let mut fn_block = format!("fn {}()\n", entry_fn);
+        for s in stmts {
+            for line in s.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    fn_block.push_str(&format!("    {}\n", trimmed));
+                }
+            }
+        }
+        if let Some(ret) = return_expr {
+            fn_block.push_str(&format!("    return {}\n", ret.trim()));
+        }
+
+        let src = self
+            .get_file(vpath)
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        let sig_prefix = format!("fn {}(", entry_fn);
+        let lines: Vec<&str> = src.lines().collect();
+        let mut start_line = None;
+        let mut end_line = lines.len();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if start_line.is_none() {
+                if !line.starts_with(' ')
+                    && !line.starts_with('\t')
+                    && trimmed.starts_with(&sig_prefix)
+                {
+                    start_line = Some(idx);
+                }
+            } else if !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.is_empty() {
+                end_line = idx;
+                break;
+            }
+        }
+
+        let mut new_src = if let Some(s) = start_line {
+            let mut out = Vec::new();
+            out.extend(lines[..s].iter().map(|l| l.to_string()));
+            out.push(fn_block.trim_end().to_string());
+            if end_line < lines.len() {
+                out.extend(lines[end_line..].iter().map(|l| l.to_string()));
+            }
+            out.join("\n") + "\n"
+        } else if src.trim().is_empty() {
+            fn_block
+        } else {
+            format!("{}\n\n{}", fn_block.trim_end(), src.trim_start())
+        };
+
+        let call_pattern = format!("{}()", entry_fn);
+        let has_top_level_call = new_src.lines().any(|l| {
+            !l.starts_with(' ') && !l.starts_with('\t') && l.contains(&call_pattern)
+        });
+        if !has_top_level_call {
+            new_src = format!(
+                "{}\nlet msg = {}()\nprint msg\n",
+                new_src.trim_end(),
+                entry_fn
+            );
+        }
+
+        self.set_file(vpath, new_src)?;
+        self.recompute_context()?;
+        Ok(())
+    }
+
     pub fn merge_delta(&mut self, other: &WorkspaceCapsule) -> Result<(), String> {
         self.crdt.merge(&other.crdt);
         self.zettels.merge(&other.zettels);
@@ -714,4 +857,45 @@ pub fn load_saved_capsule_path(cwd: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_upsert_test_and_wire_entrypoint() {
+        let mut cap = WorkspaceCapsule::new("gol").unwrap();
+        cap.wire_entrypoint(
+            "src/main.psudo",
+            "main_task",
+            &["let a = 1 + 2".to_string()],
+            Some("a"),
+        )
+        .unwrap();
+        let src = cap.get_file("src/main.psudo").unwrap();
+        assert!(src.contains("fn main_task()\n    let a = 1 + 2\n    return a"));
+        assert!(!src.contains("Hello, world!"));
+        assert!(src.contains("let msg = main_task()"));
+
+        cap.upsert_test(
+            "src/main.psudo",
+            "check_main_task",
+            &["assert_eq(main_task(), 3)".to_string()],
+        )
+        .unwrap();
+        let src2 = cap.get_file("src/main.psudo").unwrap();
+        assert!(src2.contains("test \"check_main_task\"\n    assert_eq(main_task(), 3)"));
+
+        // Upserting same test name replaces rather than duplicating
+        cap.upsert_test(
+            "src/main.psudo",
+            "check_main_task",
+            &["assert_eq(main_task(), 4)".to_string()],
+        )
+        .unwrap();
+        let src3 = cap.get_file("src/main.psudo").unwrap();
+        assert_eq!(src3.matches("test \"check_main_task\"").count(), 1);
+        assert!(src3.contains("assert_eq(main_task(), 4)"));
+    }
 }

@@ -23,16 +23,18 @@ When working with `psudo`, there is a strict division of labor between the **Out
 # 2. CLI Commands Reference
 - `psudo init <DIR> [--template blank|log|sensor|quota] [--with-docs]` -> Create new project workspace (`psudo.bin` + `.pseudo/sandbox/`).
 
-- `psudo contract <CAPSULE|FILE> [--json|--yaml] [--symbol <NAME>] [-o <FILE>]` -> Generate behavioral contracts from .pseudo source files or capsules (token-compressed, no code leakage).
+- `psudo contract <CAPSULE|FILE> [--json|--yaml] [--symbol <NAME>] [-o <FILE>]` -> Generate behavioral contracts from .pseudo source files or capsules (token-compressed, no code leakage; includes `params_used`, `branches`, `returns`).
 - `psudo vfs show <CAPSULE> -h` -> View function signatures and `@stub` directives in readable syntax. (Full `.psudo` printing via `--all` or `synth --print` requires `--reveal-code "<answer>"` to the CLI security question.)
 - `psudo vfs stub <CAPSULE> <FN> [PARAMS...] --directive "<TEXT>"` -> Add or update function stub in capsule.
+- `psudo vfs test [<CAPSULE>] <TEST_NAME> --call "<EXPR>" --expect "<VAL>" [--assert "<COND>"]` -> Declare or update `test "..."` block in capsule.
+- `psudo vfs wire [<CAPSULE>] [--entry <FN>] [--call "<STMT>" ...] [--return "<EXPR>"]` -> Wire entrypoint function (`main_task`) to call synthesized functions.
 - `psudo vfs write [<CAPSULE>] <VPATH> <FILE|->` -> Write or update virtual file inside capsule.
 - `psudo vfs list <CAPSULE>` -> List virtual files inside capsule.
 - `psudo vfs rm [<CAPSULE>] <VPATH>` -> Remove virtual file from capsule.
 - `psudo synth <CAPSULE> [--write]` -> Synthesize stubs into working code. Use `--write` to save into capsule.
 - `psudo check <CAPSULE> [--all-modules]` -> Verify syntax, static types, borrow rules, and check all modules for unresolved stubs.
 - `psudo test <CAPSULE>` -> Run in-capsule tests (`test "..."` blocks).
-- `psudo run <CAPSULE>` -> Run script via interpreter (resolves `.pseudo/sandbox/` relative to capsule workspace).
+- `psudo run <CAPSULE> [--call "<EXPR>"]` -> Run script via interpreter (resolves `.pseudo/sandbox/` relative to capsule workspace) or invoke a single expression.
 - `psudo build <CAPSULE> --run` -> Compile to native binary and execute.
 - `psudo benchmark <CAPSULE>` -> Profile compile time and runtime latency.
 - `psudo docs [-o <FILE>]` -> Emit CLI guide and domain glossary.

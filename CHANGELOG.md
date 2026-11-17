@@ -2,6 +2,28 @@
 
 All notable changes to `psudo` are documented in this file.
 
+## [0.9.0] - 2026-11-18
+
+### Changed
+- **Breaking CLI**: Removed the `-b` / `--check-borrows` flag across `psudo` and `psudo check`; borrow checking (`CheckedInterpret`) is now unconditionally enabled by default.
+
+### Added
+- **Declarative VFS testing & wiring**: `psudo vfs test <TEST_NAME> --call "<EXPR>" --expect "<VAL>"` (`WorkspaceCapsule::upsert_test`) and `psudo vfs wire [--entry <FN>] [--call "<STMT>"] [--return "<EXPR>"]` (`WorkspaceCapsule::wire_entrypoint`).
+- **Direct expression evaluation**: `psudo run [<CAPSULE|FILE>] --call "<EXPR>"` invokes any capsule function without editing `main_task`.
+- **Behavioral contract audit**: `psudo contract` `StaticImplSummary` now reports `params_used`, `branches`, `returns`, multi-guard + `@stub` directive guard extraction, and directive-to-AST call-drift warnings.
+
+### Fixed
+- **`psudo run` parity & exit codes**: Delegated stdlib builtins (`load_json`, `len`, `persistent_kv`, `set`, `get`, `str`, etc.) and early-return propagation in `CheckedInterpret`, matched unquoted string `print` output with `psudo build --run`, and exited non-zero on undefined runtime symbols.
+- **`psudo dag export`**: Extracted call-graph edges from function bodies and `@stub` traces, rendered isolated vertices in `--format mermaid`, routed `[psudo dag]` banner to `stderr`, and made topological/DOT ordering deterministic.
+- **`psudo contract` & `psudo synth`**: Mixed symbol name, params, and directive into `content_hash` to prevent hash collisions, fixed double-space `intent` formatting on single-word functions, and normalized synthesized body indentation to 4 spaces.
+
+## [0.8.0] - 2026-11-16
+
+### Added
+- **Bundled 100.7M & 33.6M `TQ2_0` models (`pseudo-engine v0.3.0`)**: Added `pseudo-100m-tq2_0.gguf` (primary) and `pseudo-33m-tq2_0.gguf` (fallback), embedded `tokenizer.json` directly into `pseudo-engine`, and unified root Cargo workspace build (`cargo build --release`).
+- **Starter templates & examples**: Added `blank`, `log`, `sensor`, and `quota` templates with `.pseudo/sandbox/` JSON fixtures, pre-built `examples/` capsules, and `.agents/skills/psudo-orchestrator/SKILL.md`.
+- **Conformance suites**: Added 100-prompt Turing suite (`PROMPT_TESTCASES.md`) and 80-prompt multi-aspect suite (`MODEL_ASPECT_TESTCASES.md`).
+
 ## [0.7.0]
 
 ### Added

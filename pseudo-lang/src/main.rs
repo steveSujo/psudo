@@ -23,11 +23,6 @@ use std::{
     rc::Rc,
 };
 
-enum InterpreterMode {
-    Normal(Interpret),
-    Checked(CheckedInterpret),
-}
-
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const NAME: &str = env!("CARGO_PKG_NAME");
 const MAGIC_REVEAL_KEY: &str = "the slow pink elephant";
@@ -45,7 +40,6 @@ struct Config {
     quiet: bool,
     run_lsp: bool,
     // show_syntax: bool,
-    check_borrows: bool,
     parse_pir: bool,
 }
 
@@ -143,7 +137,6 @@ fn main() {
                 print_syntax();
                 return;
             }
-            "-b" | "--check-borrows" => config.check_borrows = true,
             "--lsp" => config.run_lsp = true,
             "--pir" => config.parse_pir = true,
             "--llm-docs" | "--docs" => {
@@ -205,7 +198,7 @@ CANONICAL AI / DEVELOPER WORKFLOW (GGUF Stub-Synthesis Loop):
   4. Synthesize:    psudo synth <CAPSULE> --write
                     -> Calls local GGUF model (BitNet 33M) to automatically generate
                        working, borrow-checked code for all unresolved stubs!
-  5. Verify:        psudo check <CAPSULE> -a -b
+  5. Verify:        psudo check <CAPSULE> -a
                     -> Audits syntax, borrow rules, and verifies 0 unresolved stubs remain
   6. Test & Build:  psudo test <CAPSULE>
                     -> Runs in-capsule test "..." blocks
@@ -230,14 +223,14 @@ CRITICAL INSTRUCTIONS FOR AI CODING ASSISTANTS:
 
 Toolchain Subcommands:
   init [DIR] Initialize single-binary virtual workspace capsule (psudo.bin)
-  vfs <list|show|stub|merge|rm>          Manage virtual files inside psudo.bin capsule
+  vfs <list|show|stub|test|wire|merge|rm> Manage virtual files, stubs, tests & wiring inside psudo.bin
 
   contract <CAPSULE|FILE> [--json] [--yaml] [--symbol <NAME>]  Generate behavioral contracts from .pseudo source files or capsules
 
-  check <CAPSULE> [-b]                   Verify syntax, borrows, and unresolved stubs in virtual modules
+  check <CAPSULE> [-a]                   Verify syntax, borrows, and unresolved stubs in virtual modules
   synth <CAPSULE> [--write]              Black-box pIR/GGUF stub synthesis into psudo.bin capsule
   build <CAPSULE> [-o <DIR>] [--run]     Compile native verified Rust binary artifact from capsule via cargo
-  run <CAPSULE> [--bin]                  Execute capsule (or run compiled binary)
+  run <CAPSULE> [--bin] [--call "<EXPR>"] Execute capsule (or invoke expression)
   mcp                                    Launch Model Context Protocol stdio server bound to psudo.bin
   docs                                   Emit LLM-optimized caveman CLI guide and domain glossary
   [FILE]                                 Input file or capsule to interpret
@@ -245,7 +238,6 @@ Toolchain Subcommands:
   -h, --help       Show this help message
   -V, --version    Show version
   -f, --file <PATH>  Input file or capsule path
-  -b, --check-borrows  Enable borrow checking
       --lsp          Start LSP server
       --pir          Parse input as pIR
       --llm-docs     Emit LLM-optimized caveman CLI guide and domain glossary"###,
@@ -445,36 +437,24 @@ fn run_cmd_init(args: &[String]) {
 }
 
 fn run_cmd_vfs(args: &[String]) {
-    if args.is_empty() {
-        println!("Usage: psudo vfs <list|show|stub|merge|rm|use> [args...]");
-        println!("Manage virtual files and stubs inside psudo.bin capsule containers.");
-        println!(
-            "  vfs list [--capsule <PATH>]                              List all virtual files"
-        );
-        println!("  vfs show [--capsule <PATH>] [VIRTUAL_PATH] [--human] [--all]  Inspect function signatures & stubs");
-        println!("  vfs stub [--capsule <PATH>] <LOCATION> <FN> [PARAMS...] --directive \"<TEXT>\"  Declare or update function stub");
-        println!("  vfs rm [--capsule <PATH>] <VIRTUAL_PATH>                 Remove virtual file");
-        println!(
-            "  vfs merge [--capsule <PATH>] <SOURCE_CAPSULE>            Merge another capsule"
-        );
-        println!("  vfs use <CAPSULE_PATH>                                   Set default capsule for this workspace");
-        return;
-    }
-    // Handle top-level --help
-    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        println!("Usage: psudo vfs <list|show|stub|merge|rm|use> [args...]");
-        println!("Manage virtual files and stubs inside psudo.bin capsule containers.");
-        println!(
-            "  vfs list [--capsule <PATH>]                              List all virtual files"
-        );
-        println!("  vfs show [--capsule <PATH>] [VIRTUAL_PATH] [--human] [--all]  Inspect function signatures & stubs");
-        println!("  vfs stub [--capsule <PATH>] <LOCATION> <FN> [PARAMS...] --directive \"<TEXT>\"  Declare or update function stub");
-        println!("  vfs rm [--capsule <PATH>] <VIRTUAL_PATH>                 Remove virtual file");
-        println!(
-            "  vfs merge [--capsule <PATH>] <SOURCE_CAPSULE>            Merge another capsule"
-        );
-        println!("  vfs use <CAPSULE_PATH>                                   Set default capsule for this workspace");
-        return;
+    if args.is_empty() || args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+        if args.is_empty() || (!matches!(args[0].as_str(), "stub" | "write" | "test" | "wire")) {
+            println!("Usage: psudo vfs <list|show|stub|test|wire|merge|rm|use> [args...]");
+            println!("Manage virtual files, stubs, tests, and wiring inside psudo.bin capsule containers.");
+            println!(
+                "  vfs list [--capsule <PATH>]                              List all virtual files"
+            );
+            println!("  vfs show [--capsule <PATH>] [VIRTUAL_PATH] [--human] [--all]  Inspect function signatures & stubs");
+            println!("  vfs stub [--capsule <PATH>] <LOCATION> <FN> [PARAMS...] --directive \"<TEXT>\"  Declare or update function stub");
+            println!("  vfs test [<CAPSULE>] <TEST_NAME> --call \"<EXPR>\" --expect \"<VAL>\" [--assert \"<COND>\"]  Upsert declarative test block");
+            println!("  vfs wire [<CAPSULE>] [--entry <FN>] [--call \"<STMT>\" ...] [--return \"<EXPR>\"]  Wire entrypoint function");
+            println!("  vfs rm [--capsule <PATH>] <VIRTUAL_PATH>                 Remove virtual file");
+            println!(
+                "  vfs merge [--capsule <PATH>] <SOURCE_CAPSULE>            Merge another capsule"
+            );
+            println!("  vfs use <CAPSULE_PATH>                                   Set default capsule for this workspace");
+            return;
+        }
     }
 
     let subcmd = &args[0];
@@ -1044,6 +1024,226 @@ fn run_cmd_vfs(args: &[String]) {
                 out_path.display()
             );
         }
+        "test" => {
+            if sub_args.is_empty()
+                || sub_args.contains(&"-h".to_string())
+                || sub_args.contains(&"--help".to_string())
+            {
+                println!("Usage: psudo vfs test [<CAPSULE> | --capsule <PATH>] <TEST_NAME> [--call \"<EXPR>\" --expect \"<VAL>\"]... [--assert \"<COND>\"]... [--location <VPATH>]");
+                println!("Declare or update a declarative `test \"...\"` block inside psudo.bin.");
+                return;
+            }
+            let mut capsule_override: Option<String> = None;
+            let mut vpath = "src/main.psudo".to_string();
+            let mut explicit_location = false;
+            let mut pos: Vec<String> = Vec::new();
+            let mut calls: Vec<String> = Vec::new();
+            let mut expects: Vec<String> = Vec::new();
+            let mut asserts: Vec<String> = Vec::new();
+
+            let mut i = 0;
+            while i < sub_args.len() {
+                match sub_args[i].as_str() {
+                    "--capsule" if i + 1 < sub_args.len() => {
+                        capsule_override = Some(sub_args[i + 1].clone());
+                        i += 2;
+                    }
+                    "--location" | "-l" if i + 1 < sub_args.len() => {
+                        vpath = sub_args[i + 1].clone();
+                        explicit_location = true;
+                        i += 2;
+                    }
+                    "--call" if i + 1 < sub_args.len() => {
+                        calls.push(sub_args[i + 1].clone());
+                        i += 2;
+                    }
+                    "--expect" if i + 1 < sub_args.len() => {
+                        expects.push(sub_args[i + 1].clone());
+                        i += 2;
+                    }
+                    "--assert" if i + 1 < sub_args.len() => {
+                        asserts.push(sub_args[i + 1].clone());
+                        i += 2;
+                    }
+                    arg if !arg.starts_with('-') => {
+                        pos.push(arg.to_string());
+                        i += 1;
+                    }
+                    other => {
+                        eprintln!("Error: Unknown or incomplete flag '{}' for vfs test", other);
+                        process::exit(1);
+                    }
+                }
+            }
+
+            let test_name = if capsule_override.is_none() && pos.len() >= 2 {
+                capsule_override = Some(pos[0].clone());
+                pos[1].clone()
+            } else if !pos.is_empty() {
+                pos[0].clone()
+            } else {
+                eprintln!("Error: <TEST_NAME> is required for `psudo vfs test`.");
+                process::exit(1);
+            };
+
+            if calls.len() != expects.len() {
+                eprintln!("Error: Each --call must be paired with a --expect.");
+                process::exit(1);
+            }
+
+            let mut assertions: Vec<String> = calls
+                .iter()
+                .zip(expects.iter())
+                .map(|(c, e)| format!("assert_eq({}, {})", c, e))
+                .collect();
+            for cond in asserts {
+                assertions.push(format!("assert({})", cond));
+            }
+            if assertions.is_empty() {
+                eprintln!("Error: Provide at least one --call/--expect pair or --assert condition.");
+                process::exit(1);
+            }
+
+            let arg = capsule_override.unwrap_or_else(|| ".".to_string());
+            match resolve_capsule_and_vpath(&arg) {
+                Ok((bin_path, default_vpath)) => {
+                    if !explicit_location
+                        && vpath == "src/main.psudo"
+                        && default_vpath.ends_with(".psudo")
+                        && default_vpath != "src/main.psudo"
+                    {
+                        vpath = default_vpath;
+                    }
+                    match WorkspaceCapsule::load_from_file(&bin_path) {
+                        Ok(mut cap) => {
+                            if let Err(e) = cap.upsert_test(&vpath, &test_name, &assertions) {
+                                eprintln!("Error upserting test: {}", e);
+                                process::exit(1);
+                            }
+                            if let Err(e) = cap.save_to_file(&bin_path) {
+                                eprintln!("Error saving capsule: {}", e);
+                                process::exit(1);
+                            }
+                            println!(
+                                "✓ Test '{}' upserted into {} ({})",
+                                test_name,
+                                bin_path.display(),
+                                vpath
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Error loading capsule: {}", e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving capsule: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
+        "wire" => {
+            if sub_args.contains(&"-h".to_string()) || sub_args.contains(&"--help".to_string()) {
+                println!("Usage: psudo vfs wire [<CAPSULE> | --capsule <PATH>] [--entry <FN>] [--call \"<STMT_OR_EXPR>\" ...] [--return \"<EXPR>\"] [--location <VPATH>]");
+                println!("Wire entrypoint function (default: main_task) to call synthesized functions.");
+                return;
+            }
+            let mut capsule_override: Option<String> = None;
+            let mut vpath = "src/main.psudo".to_string();
+            let mut explicit_location = false;
+            let mut entry_fn = "main_task".to_string();
+            let mut calls: Vec<String> = Vec::new();
+            let mut return_expr: Option<String> = None;
+
+            let mut i = 0;
+            while i < sub_args.len() {
+                match sub_args[i].as_str() {
+                    "--capsule" if i + 1 < sub_args.len() => {
+                        capsule_override = Some(sub_args[i + 1].clone());
+                        i += 2;
+                    }
+                    "--location" | "-l" if i + 1 < sub_args.len() => {
+                        vpath = sub_args[i + 1].clone();
+                        explicit_location = true;
+                        i += 2;
+                    }
+                    "--entry" | "-e" if i + 1 < sub_args.len() => {
+                        entry_fn = sub_args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--call" if i + 1 < sub_args.len() => {
+                        calls.push(sub_args[i + 1].clone());
+                        i += 2;
+                    }
+                    "--return" | "-r" if i + 1 < sub_args.len() => {
+                        return_expr = Some(sub_args[i + 1].clone());
+                        i += 2;
+                    }
+                    arg if !arg.starts_with('-') && capsule_override.is_none() => {
+                        capsule_override = Some(arg.to_string());
+                        i += 1;
+                    }
+                    other => {
+                        eprintln!("Error: Unknown or incomplete flag '{}' for vfs wire", other);
+                        process::exit(1);
+                    }
+                }
+            }
+
+            if return_expr.is_none() {
+                if let Some(last) = calls.last() {
+                    let t = last.trim();
+                    if !t.starts_with("let ") && !t.starts_with("print ") && !t.contains(" = ") {
+                        return_expr = calls.pop();
+                    }
+                }
+            }
+
+            let arg = capsule_override.unwrap_or_else(|| ".".to_string());
+            match resolve_capsule_and_vpath(&arg) {
+                Ok((bin_path, default_vpath)) => {
+                    if !explicit_location
+                        && vpath == "src/main.psudo"
+                        && default_vpath.ends_with(".psudo")
+                        && default_vpath != "src/main.psudo"
+                    {
+                        vpath = default_vpath;
+                    }
+                    match WorkspaceCapsule::load_from_file(&bin_path) {
+                        Ok(mut cap) => {
+                            if let Err(e) = cap.wire_entrypoint(
+                                &vpath,
+                                &entry_fn,
+                                &calls,
+                                return_expr.as_deref(),
+                            ) {
+                                eprintln!("Error wiring entrypoint: {}", e);
+                                process::exit(1);
+                            }
+                            if let Err(e) = cap.save_to_file(&bin_path) {
+                                eprintln!("Error saving capsule: {}", e);
+                                process::exit(1);
+                            }
+                            println!(
+                                "✓ Wired entrypoint '{}' in {} ({})",
+                                entry_fn,
+                                bin_path.display(),
+                                vpath
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Error loading capsule: {}", e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving capsule: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
         _ => {
             eprintln!("Unknown vfs subcommand: {}", subcmd);
             process::exit(1);
@@ -1068,7 +1268,10 @@ fn run_cmd_check(args: &[String]) {
             json_output = true;
         } else if args[i] == "--all-modules" || args[i] == "-a" {
             all_modules = true;
-        } else if !args[i].starts_with('-') {
+        } else if args[i].starts_with('-') {
+            eprintln!("Error: Unknown flag '{}' for check", args[i]);
+            process::exit(1);
+        } else {
             target = args[i].clone();
         }
         i += 1;
@@ -1503,15 +1706,64 @@ fn run_cmd_build(args: &[String]) {
 }
 
 fn run_cmd_run(args: &[String]) {
-    let target = args.first().map(|s| s.as_str()).unwrap_or(".");
-    let is_bin = args.iter().any(|a| a == "--bin");
+    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+        println!("Usage: psudo run [<CAPSULE|FILE>] [--bin] [--call \"<EXPR>\"]");
+        println!("Execute capsule entrypoint or evaluate a --call expression against capsule functions.");
+        return;
+    }
+    let mut target = ".".to_string();
+    let mut target_set = false;
+    let mut is_bin = false;
+    let mut call_expr: Option<String> = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--bin" => is_bin = true,
+            "--call" if i + 1 < args.len() => {
+                call_expr = Some(args[i + 1].clone());
+                i += 1;
+            }
+            arg if !arg.starts_with('-') && !target_set => {
+                target = arg.to_string();
+                target_set = true;
+            }
+            other if other.starts_with('-') => {
+                eprintln!("Error: Unknown or incomplete flag '{}' for run", other);
+                process::exit(1);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
     let config = Config {
-        file_path: Some(PathBuf::from(target)),
-        check_borrows: true,
+        file_path: Some(PathBuf::from(&target)),
         ..Default::default()
     };
-    if is_bin || target.ends_with(".bin") || Path::new(target).is_dir() {
-        match resolve_capsule_and_vpath(target) {
+
+    let prepare_source = |raw: &str| -> String {
+        if let Some(ref expr) = call_expr {
+            // Keep top-level fn/class declarations and invoke only the requested --call expression
+            let mut filtered = Vec::new();
+            let mut keep_block = false;
+            for line in raw.lines() {
+                let trimmed = line.trim();
+                if !line.starts_with(' ') && !line.starts_with('\t') {
+                    keep_block = trimmed.starts_with("fn ") || trimmed.starts_with("class ");
+                }
+                if keep_block {
+                    filtered.push(line);
+                }
+            }
+            format!("{}\nprint ({})\n", filtered.join("\n"), expr)
+        } else {
+            raw.to_string()
+        }
+    };
+
+    if is_bin || target == "." || target.ends_with(".bin") || Path::new(&target).is_dir() {
+        match resolve_capsule_and_vpath(&target) {
             Ok((bin_path, _)) => match WorkspaceCapsule::load_from_file(&bin_path) {
                 Ok(cap) => {
                     let source = cap
@@ -1526,7 +1778,7 @@ fn run_cmd_run(args: &[String]) {
                             let _ = env::set_current_dir(ws_dir);
                         }
                     }
-                    run_source(&source, &config);
+                    run_source(&prepare_source(&source), &config);
                     if let Some(prev) = prev_cwd {
                         let _ = env::set_current_dir(prev);
                     }
@@ -1542,7 +1794,19 @@ fn run_cmd_run(args: &[String]) {
             }
         }
     } else {
-        run_file(&PathBuf::from(target), &config);
+        let p = PathBuf::from(&target);
+        if call_expr.is_some() {
+            let source = match fs::read_to_string(&p) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error reading '{}': {}", p.display(), e);
+                    process::exit(1);
+                }
+            };
+            run_source(&prepare_source(&source), &config);
+        } else {
+            run_file(&p, &config);
+        }
     }
 }
 
@@ -1738,29 +2002,19 @@ fn run_source(source: &str, config: &Config) {
         }
         println!();
     }
-    let mut interpreter = match config.check_borrows {
-        true => InterpreterMode::Checked(CheckedInterpret {
-            environment: Rc::new(RefCell::new(CheckedEnvironment::new(Rc::new(
-                RefCell::new(BorrowChecker::new()),
-            )))),
-            check_borrows: true,
-        }),
-        false => InterpreterMode::Normal(Interpret::default()),
+    let mut interpreter = CheckedInterpret {
+        environment: Rc::new(RefCell::new(CheckedEnvironment::new(Rc::new(
+            RefCell::new(BorrowChecker::new()),
+        )))),
+        check_borrows: true,
     };
     for stmt in statements {
-        match &mut interpreter {
-            InterpreterMode::Checked(ci) => {
-                ci.execute(&stmt);
-                if !ci.environment.borrow().errors.is_empty() {
-                    for err in &ci.environment.borrow().errors {
-                        eprintln!("{}", err);
-                    }
-                    process::exit(1);
-                }
+        interpreter.execute(&stmt);
+        if !interpreter.environment.borrow().errors.is_empty() {
+            for err in &interpreter.environment.borrow().errors {
+                eprintln!("{}", err);
             }
-            InterpreterMode::Normal(ni) => {
-                ni.execute(&stmt);
-            }
+            process::exit(1);
         }
     }
 }
@@ -2079,7 +2333,7 @@ fn run_cmd_dag(args: &[String]) {
     let dag = TaskDAG::scan_from_capsule(&capsule);
     match dag.topological_sort() {
         Ok(sorted) => {
-            println!("[psudo dag] Topological order resolved: {:?}", sorted);
+            eprintln!("[psudo dag] Topological order resolved: {:?}", sorted);
         }
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -2161,6 +2415,9 @@ Contract Schema (pseudo_ast_stub):
       - status:            IMPLEMENTED | BLACK_BOX_STUB | PARTIAL_IMPL
       - stub_directive:    Natural language @stub directive (if any)
       - intent:            Human-readable intent summary
+      - params_used:       Used vs unused signature parameters
+      - branches:          Count of conditional branches (if / else)
+      - returns:           Normalized return expressions
       - guards:            Early-return conditions (e.g., "not sandbox path X is a directory")
       - side_effects:      Field mutations (e.g., "Mutates this.cachedLogs (via push/pop)")
       - sandbox_io:        Sandbox FS ops (e.g., "isDir, listDir, readFile")

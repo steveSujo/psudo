@@ -26,3 +26,6 @@ DEV_PLAN.md
 /examples/**/.pseudo/state/
 /playground/**/.mcp.json
 /playground/**/CLI_OBSERVATIONS.md
+.axon/
+.agents/skills/axon-nav/
+.agents/skills/caveman/

@@ -31,6 +31,9 @@ pub struct StaticImplSummary {
     pub status: String,
     pub stub_directive: String,
     pub intent: String,
+    pub params_used: String,
+    pub branches: usize,
+    pub returns: Vec<String>,
     pub guards: String,
     pub side_effects: String,
     pub sandbox_io: String,
@@ -44,6 +47,9 @@ struct PseudoFootprint {
     is_stub: bool,
     stub_directives: Vec<String>,
     local_vars: HashSet<String>,
+    local_bindings: Vec<(String, String)>,
+    used_params: HashSet<String>,
+    branch_count: usize,
     guards: Vec<GuardClause>,
     mutations: HashSet<String>,
     sandbox_fs_ops: HashSet<String>,
@@ -117,11 +123,53 @@ impl Contract {
                                 traces.iter().rev().find(|t| !t.directive.is_empty())
                             {
                                 c.static_impl_summary.stub_directive = last_trace.directive.clone();
+                                if c.static_impl_summary.guards == "None (unconditional entry)." {
+                                    if let Some(g) = extract_guard_from_directive(&last_trace.directive) {
+                                        c.static_impl_summary.guards = g;
+                                    }
+                                }
+                                let mut hasher = FnvHasher::default();
+                                c.prov.content_hash.hash(&mut hasher);
+                                last_trace.directive.hash(&mut hasher);
+                                c.prov.content_hash = format!("0x{:016x}", hasher.finish());
                             }
                         }
                     }
                 }
                 all_contracts.extend(contracts);
+            }
+        }
+
+        let all_symbols: Vec<String> = all_contracts
+            .iter()
+            .map(|c| c.prov.symbol.clone())
+            .collect();
+        for c in &mut all_contracts {
+            if c.static_impl_summary.dependencies == "Leaf function (zero internal calls)."
+                && c.static_impl_summary.stub_directive != "None"
+            {
+                let dir = &c.static_impl_summary.stub_directive;
+                let mut missing_calls: Vec<String> = all_symbols
+                    .iter()
+                    .filter(|s| *s != &c.prov.symbol)
+                    .filter(|s| {
+                        let pat = format!("{s}(");
+                        dir.match_indices(&pat).any(|(idx, _)| {
+                            idx == 0
+                                || (!dir.as_bytes()[idx - 1].is_ascii_alphanumeric()
+                                    && dir.as_bytes()[idx - 1] != b'_')
+                        })
+                    })
+                    .cloned()
+                    .collect();
+                missing_calls.sort();
+                missing_calls.dedup();
+                if !missing_calls.is_empty() {
+                    c.static_impl_summary.dependencies = format!(
+                        "Calls {} (in @stub directive; warning: synthesized body is leaf).",
+                        missing_calls.join(", ")
+                    );
+                }
             }
         }
 
@@ -377,9 +425,9 @@ fn parse_function_declaration(text: &str) -> Option<(String, Vec<String>)> {
 fn analyze_pseudo_body(sym: &ExtractedSymbol, str_vault: &[String]) -> PseudoFootprint {
     let mut footprint = PseudoFootprint::default();
     let mut loop_indent_stack: Vec<usize> = Vec::new();
-    let mut first_stmt = true;
     let mut pending_guard_cond: Option<String> = None;
     let mut for_loop_skip = 0; // Counter to skip for loop header lines (condition, step)
+    let param_set: HashSet<&str> = sym.params.iter().map(String::as_str).collect();
 
     if let Some(directive) = &sym.pending_stub_directive {
         footprint.is_stub = true;
@@ -389,6 +437,19 @@ fn analyze_pseudo_body(sym: &ExtractedSymbol, str_vault: &[String]) -> PseudoFoo
     for line in &sym.body_lines {
         let text = &line.text;
         let indent = line.indent;
+        let trimmed = text.trim();
+
+        // Track parameter references (excluding `let <lhs> =` target name)
+        let scan_text = if let Some(after_let) = trimmed.strip_prefix("let ") {
+            after_let.split_once('=').map(|(_, rhs)| rhs).unwrap_or("")
+        } else {
+            trimmed
+        };
+        for tok in scan_text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+            if !tok.is_empty() && param_set.contains(tok) {
+                footprint.used_params.insert(tok.to_string());
+            }
+        }
 
         // Pop loop stack on dedent
         while let Some(&loop_indent) = loop_indent_stack.last() {
@@ -404,7 +465,6 @@ fn analyze_pseudo_body(sym: &ExtractedSymbol, str_vault: &[String]) -> PseudoFoo
             // Classify calls in skipped lines
             classify_calls(text, &mut footprint);
             for_loop_skip -= 1;
-            first_stmt = false;
             continue;
         }
 
@@ -415,39 +475,46 @@ fn analyze_pseudo_body(sym: &ExtractedSymbol, str_vault: &[String]) -> PseudoFoo
         }
 
         // Check for let binding
-        if let Some(var) = parse_let_binding(text) {
-            footprint.local_vars.insert(var);
+        if let Some((var, rhs)) = parse_let_binding_with_rhs(text) {
+            footprint.local_vars.insert(var.clone());
+            footprint.local_bindings.push((var, rhs));
             // Also classify calls in the RHS of let bindings
             classify_calls(text, &mut footprint);
-            first_stmt = false;
             continue;
         }
 
         // Check for while loop
-        if text.trim_start().starts_with("while ") {
+        if trimmed.starts_with("while ") {
             loop_indent_stack.push(indent);
             footprint.max_loop_depth = footprint.max_loop_depth.max(loop_indent_stack.len() as u8);
-            first_stmt = false;
             continue;
         }
 
         // Check for for loop (3-line header)
-        if text.trim_start().starts_with("for let ") {
+        if trimmed.starts_with("for let ") {
             loop_indent_stack.push(indent);
             footprint.max_loop_depth = footprint.max_loop_depth.max(loop_indent_stack.len() as u8);
             // Classify calls in the for init line
             classify_calls(text, &mut footprint);
             // Skip next 2 lines at child indent (condition and step)
             for_loop_skip = 2;
-            first_stmt = false;
             continue;
         }
 
+        // Count conditional branches
+        if trimmed.starts_with("if (")
+            || trimmed.starts_with("if ")
+            || trimmed == "else"
+            || trimmed.starts_with("else:")
+            || trimmed.starts_with("else ")
+        {
+            footprint.branch_count += 1;
+        }
+
         // Check for if statement (guard clause): supports both `if (cond)` and `if cond`
-        let trimmed_if = text.trim_start();
-        if first_stmt && (trimmed_if.starts_with("if (") || trimmed_if.starts_with("if ")) {
-            let cond = if trimmed_if.starts_with("if (") {
-                let after_if = &trimmed_if[4..];
+        if trimmed.starts_with("if (") || trimmed.starts_with("if ") {
+            let cond = if trimmed.starts_with("if (") {
+                let after_if = &trimmed[4..];
                 let mut paren_count = 1;
                 let mut cond_end = None;
                 for (i, ch) in after_if.char_indices() {
@@ -463,12 +530,11 @@ fn analyze_pseudo_body(sym: &ExtractedSymbol, str_vault: &[String]) -> PseudoFoo
                 }
                 cond_end.map(|rel_end| after_if[..rel_end].trim().to_string())
             } else {
-                Some(trimmed_if[3..].trim().trim_end_matches(':').trim().to_string())
+                Some(trimmed[3..].trim().trim_end_matches(':').trim().to_string())
             };
             if let Some(cond) = cond {
                 classify_calls(text, &mut footprint);
                 pending_guard_cond = Some(cond);
-                first_stmt = false;
                 continue;
             }
         }
@@ -480,16 +546,15 @@ fn analyze_pseudo_body(sym: &ExtractedSymbol, str_vault: &[String]) -> PseudoFoo
                 let ret = text[ret_start..].trim().to_string();
                 footprint.guards.push(GuardClause {
                     cond,
-                    ret_expr: ret,
+                    ret_expr: ret.clone(),
                 });
-                first_stmt = false;
+                footprint.return_exprs.push(ret);
                 continue;
             } else if text.contains("todo(") {
                 footprint.guards.push(GuardClause {
                     cond,
                     ret_expr: "todo(...)".to_string(),
                 });
-                first_stmt = false;
                 continue;
             } else {
                 // Not a guard clause, clear pending
@@ -522,19 +587,17 @@ fn analyze_pseudo_body(sym: &ExtractedSymbol, str_vault: &[String]) -> PseudoFoo
 
         // Classify calls
         classify_calls(text, &mut footprint);
-
-        first_stmt = false;
     }
 
     footprint
 }
 
-fn parse_let_binding(text: &str) -> Option<String> {
+fn parse_let_binding_with_rhs(text: &str) -> Option<(String, String)> {
     let text = text.trim();
-    if text.starts_with("let ") {
-        let rest = &text[4..].trim();
-        if let Some(eq_idx) = rest.find('=') {
-            return Some(rest[..eq_idx].trim().to_string());
+    if let Some(rest) = text.strip_prefix("let ") {
+        let rest = rest.trim();
+        if let Some((lhs, rhs)) = rest.split_once('=') {
+            return Some((lhs.trim().to_string(), rhs.trim().to_string()));
         }
     }
     None
@@ -711,8 +774,11 @@ fn build_contract(
     file_path: &str,
     _str_vault: &[String],
 ) -> Contract {
-    // Compute content hash (FNV-1a 64-bit)
+    // Compute content hash (FNV-1a 64-bit) including symbol name, params, directive, and body
     let mut hasher = FnvHasher::default();
+    sym.name.hash(&mut hasher);
+    sym.params.hash(&mut hasher);
+    sym.pending_stub_directive.hash(&mut hasher);
     for line in &sym.body_lines {
         line.text.hash(&mut hasher);
     }
@@ -755,20 +821,30 @@ fn build_contract(
             rest,
             params_str
         )
+    } else if rest.is_empty() {
+        format!("{} with params ({}).", verb, params_str)
     } else {
         format!("{} {} with params ({}).", verb, rest, params_str)
     };
 
     // Guards
-    let guards = if footprint.guards.is_empty() {
-        "None (unconditional entry).".to_string()
+    let guards = if !footprint.guards.is_empty() {
+        footprint
+            .guards
+            .iter()
+            .map(|g| {
+                format!(
+                    "Returns {} immediately if {}.",
+                    g.ret_expr,
+                    verbalize_pseudo_expr(&g.cond)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else if let Some(dir_guard) = extract_guard_from_directive(&stub_directive) {
+        dir_guard
     } else {
-        let g = &footprint.guards[0];
-        format!(
-            "Returns {} immediately if {}.",
-            g.ret_expr,
-            verbalize_pseudo_expr(&g.cond)
-        )
+        "None (unconditional entry).".to_string()
     };
 
     // Side effects
@@ -842,6 +918,55 @@ fn build_contract(
         d => format!("Nested loops (depth {})", d),
     };
 
+    // Parameter usage summary
+    let params_used = if sym.params.is_empty() {
+        "None".to_string()
+    } else {
+        let used: Vec<&str> = sym
+            .params
+            .iter()
+            .filter(|p| footprint.used_params.contains(p.as_str()))
+            .map(String::as_str)
+            .collect();
+        let unused: Vec<&str> = sym
+            .params
+            .iter()
+            .filter(|p| !footprint.used_params.contains(p.as_str()))
+            .map(String::as_str)
+            .collect();
+        if unused.is_empty() {
+            format!("all ({})", used.join(", "))
+        } else if used.is_empty() {
+            format!("none (unused: {})", unused.join(", "))
+        } else {
+            format!("{} (unused: {})", used.join(", "), unused.join(", "))
+        }
+    };
+
+    // Normalized return expressions (resolve simple local var aliases + string placeholders)
+    let returns: Vec<String> = footprint
+        .return_exprs
+        .iter()
+        .map(|ret| {
+            let mut resolved = ret.clone();
+            if let Some((_, rhs)) = footprint
+                .local_bindings
+                .iter()
+                .rev()
+                .find(|(var, _)| var == ret)
+            {
+                resolved = format!("{} ({})", ret, rhs);
+            }
+            for (idx, s) in _str_vault.iter().enumerate() {
+                let ph = format!("__STR_{}__", idx);
+                if resolved.contains(&ph) {
+                    resolved = resolved.replace(&ph, &format!("\"{}\"", s));
+                }
+            }
+            resolved
+        })
+        .collect();
+
     // Signature
     let signature = format!("fn {}({})", sym.name, sym.params.join(", "));
 
@@ -877,6 +1002,9 @@ fn build_contract(
             status,
             stub_directive,
             intent,
+            params_used,
+            branches: footprint.branch_count,
+            returns,
             guards,
             side_effects,
             sandbox_io,
@@ -884,6 +1012,44 @@ fn build_contract(
             control_flow,
         },
     }
+}
+
+fn extract_guard_from_directive(directive: &str) -> Option<String> {
+    let trimmed = directive.trim();
+    if trimmed.is_empty() || trimmed == "None" {
+        return None;
+    }
+    // Pattern 1: "if <cond> return <ret>, ..."
+    if let Some(after_if) = trimmed.strip_prefix("if ") {
+        if let Some(ret_idx) = after_if.find(" return ") {
+            let cond = after_if[..ret_idx].trim();
+            let rest = after_if[ret_idx + 8..].trim();
+            let ret = rest.split(',').next().unwrap_or(rest).trim();
+            if !cond.is_empty() && !ret.is_empty() {
+                return Some(format!(
+                    "Returns {} immediately if {}.",
+                    ret,
+                    verbalize_pseudo_expr(cond)
+                ));
+            }
+        }
+    }
+    // Pattern 2: "return <ret> if <cond> else <alt>"
+    if let Some(after_ret) = trimmed.strip_prefix("return ") {
+        if let Some(if_idx) = after_ret.find(" if ") {
+            let ret = after_ret[..if_idx].trim();
+            let rest = after_ret[if_idx + 4..].trim();
+            let cond = rest.split(" else ").next().unwrap_or(rest).trim();
+            if !cond.is_empty() && !ret.is_empty() {
+                return Some(format!(
+                    "Returns {} immediately if {}.",
+                    ret,
+                    verbalize_pseudo_expr(cond)
+                ));
+            }
+        }
+    }
+    None
 }
 
 fn verb_from_fn_name(name: &str) -> String {
@@ -999,5 +1165,83 @@ fn verbalize_atom(atom: &str) -> String {
         atom.to_string()
     } else {
         atom.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contract_exposes_unused_params_branches_and_returns() {
+        let src = r#"fn in_bounds(x, y, width, height)
+    let prod = x * y
+    return prod
+
+fn valid_bounds(x, y, width, height)
+    if x < 0
+        return 0
+    if y >= height
+        return 0
+    return 1
+"#;
+        let contracts = Contract::generate_contracts(src, "src/main.psudo").unwrap();
+        assert_eq!(contracts.len(), 2);
+
+        let degen = &contracts[0];
+        assert_eq!(degen.prov.symbol, "in_bounds");
+        assert_eq!(
+            degen.static_impl_summary.params_used,
+            "x, y (unused: width, height)"
+        );
+        assert_eq!(degen.static_impl_summary.branches, 0);
+        assert_eq!(degen.static_impl_summary.returns, vec!["prod (x * y)"]);
+
+        let valid = &contracts[1];
+        assert_eq!(valid.prov.symbol, "valid_bounds");
+        assert_eq!(
+            valid.static_impl_summary.params_used,
+            "x, y, height (unused: width)"
+        );
+        assert_eq!(valid.static_impl_summary.branches, 2);
+        assert_eq!(valid.static_impl_summary.returns, vec!["0", "0", "1"]);
+        assert!(valid
+            .static_impl_summary
+            .guards
+            .contains("Returns 0 immediately if x is less than 0"));
+    }
+
+    #[test]
+    fn test_contract_distinct_content_hash_and_directive_guard() {
+        let src = r#"fn in_bounds(x, y, width, height)
+    let prod = x * y
+    return prod
+
+fn idx(x, y, width)
+    let prod = x * y
+    return prod
+"#;
+        let contracts = Contract::generate_contracts(src, "src/main.psudo").unwrap();
+        assert_ne!(
+            contracts[0].prov.content_hash,
+            contracts[1].prov.content_hash
+        );
+        let g = extract_guard_from_directive("if b == 0 return 0, return a / b").unwrap();
+        assert_eq!(g, "Returns 0 immediately if b equals 0.");
+        assert_eq!(contracts[1].static_impl_summary.intent, "idx with params (x, y, width).");
+
+        let mut cap = WorkspaceCapsule::new_empty("csv-stats");
+        cap.virtual_files.insert(
+            "src/main.psudo".to_string(),
+            "fn min_val(a, b)\n    return a\nfn max_val(a, b)\n    return b\nfn spread(a, b)\n    return a\n"
+                .to_string(),
+        );
+        cap.record_stub_trace("spread", "SYNTHESIZED", "return max_val(a, b) - min_val(a, b)");
+        let cap_contracts = Contract::generate_contracts_from_capsule(&cap).unwrap();
+        let spread = cap_contracts.iter().find(|c| c.prov.symbol == "spread").unwrap();
+        assert!(spread
+            .static_impl_summary
+            .dependencies
+            .contains("Calls max_val, min_val (in @stub directive; warning: synthesized body is leaf)."));
     }
 }

@@ -35,6 +35,8 @@ pub struct BlackBoxSynthResult {
     pub verified_borrows: bool,
     pub engine_used: String,
     pub diagnostics: Vec<String>,
+    #[serde(default)]
+    pub directive: String,
 }
 
 pub fn synthesize_stubs_in_source(
@@ -101,6 +103,7 @@ pub fn synthesize_stubs_in_source(
             verified_borrows,
             engine_used: engine_name,
             diagnostics,
+            directive: raw_directive.to_string(),
         });
     }
 
@@ -307,7 +310,23 @@ fn extract_body_from_psudo(psudo_str: &str, fn_name: &str) -> String {
     if body_lines.is_empty() {
         psudo_str.to_string()
     } else {
-        body_lines.join("\n")
+        let min_indent = body_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.len() - l.trim_start().len())
+            .min()
+            .unwrap_or(0);
+        body_lines
+            .into_iter()
+            .map(|l| {
+                if l.trim().is_empty() {
+                    String::new()
+                } else {
+                    l.chars().skip(min_indent).collect()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -572,7 +591,7 @@ pub fn synthesize_stubs_in_capsule(
         if !results.is_empty() {
             capsule.set_file(&vpath, synthesized_source)?;
             for r in &results {
-                let dir_str = directive.unwrap_or("");
+                let dir_str = directive.unwrap_or(r.directive.as_str());
                 capsule.record_stub_trace(&r.symbol, "SYNTHESIZED", dir_str);
             }
             all_results.extend(results);

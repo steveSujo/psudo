@@ -124,10 +124,7 @@ class ModelConformanceHarness:
             tmp_path = Path(f.name)
 
         try:
-            cmd = [str(self.psudo_bin), "--pir"]
-            if check_borrows:
-                cmd.append("-b")
-            cmd.append(str(tmp_path))
+            cmd = [str(self.psudo_bin), "--pir", str(tmp_path)]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=self.repo_root)
             return res.returncode, res.stdout, res.stderr
         finally:
@@ -147,10 +144,7 @@ class ModelConformanceHarness:
             tmp_path = Path(f.name)
 
         try:
-            cmd = [str(self.psudo_bin)]
-            if check_borrows:
-                cmd.append("-b")
-            cmd.append(str(tmp_path))
+            cmd = [str(self.psudo_bin), str(tmp_path)]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=self.repo_root)
             return res.returncode, res.stdout, res.stderr
         finally:

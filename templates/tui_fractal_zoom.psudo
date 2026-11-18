@@ -1,0 +1,38 @@
+// Template 5: 2D Mandelbrot Fractal Zoom TUI
+// Toy-language scope: bounded escape-time loop + viewport config + persistent_kv + tui_fractal
+
+fn mandelbrot_escape(cr, ci, max_iter)
+    let zr = 0
+    let zi = 0
+    let iter = 0
+    while iter < max_iter
+        let zr2 = zr * zr
+        let zi2 = zi * zi
+        if zr2 + zi2 > 4
+            return iter
+        let next_zi = 2 * zr * zi + ci
+        zr = zr2 - zi2 + cr
+        zi = next_zi
+        iter = iter + 1
+    return max_iter
+
+fn init_fractal_viewport(path)
+    let view = load_json(path)
+    let kv = persistent_kv("fractal_state")
+    let cx = view["center_x"]
+    let cy = view["center_y"]
+    let max_iter = view["max_iter"]
+    let depth = mandelbrot_escape(cx, cy, max_iter)
+    set(kv, "center_x", cx)
+    set(kv, "center_y", cy)
+    set(kv, "zoom", view["zoom"])
+    set(kv, "max_iter", max_iter)
+    set(kv, "center_escape", depth)
+    return depth
+
+fn main()
+    let depth = init_fractal_viewport(".pseudo/sandbox/fractal_view.json")
+    print("Fractal center escape depth: " + str(depth))
+    return tui_fractal("2D Mandelbrot Explorer", persistent_kv("fractal_state"))
+
+main()

@@ -1,0 +1,31 @@
+// Template 4: Conway's Game of Life TUI
+// Toy-language scope: cellular birth/survival rule + JSON seed loading + persistent_kv + tui_grid
+
+fn next_cell_state(alive, neighbors)
+    if alive == 1
+        if neighbors == 2 or neighbors == 3
+            return 1
+        return 0
+    if neighbors == 3
+        return 1
+    return 0
+
+fn seed_life_grid(path)
+    let cfg = load_json(path)
+    let kv = persistent_kv("life_state")
+    set(kv, "width", cfg["width"])
+    set(kv, "height", cfg["height"])
+    set(kv, "pattern", cfg["pattern"])
+    let cells = cfg["live_cells"]
+    let count = len(cells)
+    set(kv, "live_count", count)
+    set(kv, "sample_rule_3_alive", next_cell_state(1, 3))
+    set(kv, "sample_rule_3_dead", next_cell_state(0, 3))
+    return count
+
+fn main()
+    let count = seed_life_grid(".pseudo/sandbox/life_seed.json")
+    print("Seeded Game of Life cells: " + str(count))
+    return tui_grid("Conway's Game of Life", persistent_kv("life_state"))
+
+main()

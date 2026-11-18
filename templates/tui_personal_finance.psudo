@@ -1,0 +1,42 @@
+// Template 6: Personal Finance TUI Dashboard
+// Toy-language scope: budget clamping + JSON ledger aggregation + persistent_kv + tui_dashboard
+
+fn clamp_budget_pct(spent, budget)
+    if budget <= 0
+        return 100
+    let pct = (spent * 100) / budget
+    if pct > 100
+        return 100
+    if pct < 0
+        return 0
+    return pct
+
+fn summarize_finances(path, monthly_budget)
+    let txns = load_json(path)
+    let n = len(txns)
+    let i = 0
+    let income = 0
+    let spent = 0
+    while i < n
+        let row = txns[i]
+        let amt = row["amount"]
+        if amt >= 0
+            income = income + amt
+        else
+            spent = spent + (0 - amt)
+        i = i + 1
+    let net = income - spent
+    let pct = clamp_budget_pct(spent, monthly_budget)
+    let kv = persistent_kv("finance_ledger")
+    set(kv, "total_income", income)
+    set(kv, "total_spent", spent)
+    set(kv, "net_savings", net)
+    set(kv, "budget_used_pct", pct)
+    return net
+
+fn main()
+    let net = summarize_finances(".pseudo/sandbox/finance.json", 2500)
+    print("Net savings: " + str(net))
+    return tui_dashboard("Personal Finance Dashboard", persistent_kv("finance_ledger"))
+
+main()

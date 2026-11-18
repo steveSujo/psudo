@@ -2,6 +2,18 @@
 
 All notable changes to `psudo` are documented in this file.
 
+## [0.10.0] - 2026-11-18
+
+### Added
+- `ratatui` (`0.29`) + `crossterm` (`0.28`) TUI builtins (`tui_dashboard`, `tui_grid`, `tui_fractal`, `tui_metric`, `tui_gauge`, `tui_sparkline`, `tui_table`, `tui_log`) with `PSUDO_TUI_HEADLESS=1` support.
+- `tokio_sleep_ms` builtin and automatic `#[tokio::main]` lowering when async builtins are used.
+- `[addons.<name>]` config in `psudo.toml` + `daemon.rs` addon stub registration hook so new builtins extend without retraining the `100M` `TQ2_0` model.
+- Three TUI templates (`life`, `fractal`, `finance`) with sandbox fixtures and `TEMPLATES.md`.
+- Integration tests covering TUI builtins, `[addons.*]`, and `#[tokio::main]` codegen.
+
+### Changed
+- Polished `README.md` top-of-fold with domain-specific language framing, a `flowchart LR` Mermaid pipeline, and a **Numbers at a Glance** table.
+
 ## [0.9.0] - 2026-11-18
 
 ### Changed

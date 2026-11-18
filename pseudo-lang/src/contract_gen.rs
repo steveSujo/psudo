@@ -699,6 +699,11 @@ const RUNTIME_UTIL: &[&str] = &[
     "tui_sparkline",
     "tui_table",
     "tui_log",
+    "tui_canvas",
+    "tui_barchart",
+    "tui_row",
+    "tui_col",
+    "tui_render",
     "tokio_sleep_ms",
 ];
 
@@ -1041,7 +1046,7 @@ fn extract_guard_from_directive(directive: &str) -> Option<String> {
         if let Some(ret_idx) = after_if.find(" return ") {
             let cond = after_if[..ret_idx].trim();
             let rest = after_if[ret_idx + 8..].trim();
-            let ret = rest.split(',').next().unwrap_or(rest).trim();
+            let ret = rest.split(&[',', ';', '.'][..]).next().unwrap_or(rest).trim();
             if !cond.is_empty() && !ret.is_empty() {
                 return Some(format!(
                     "Returns {} immediately if {}.",

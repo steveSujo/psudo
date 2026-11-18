@@ -101,7 +101,14 @@ pub enum DataTypes {
 impl Display for DataTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataTypes::Number(num) => write!(f, "{num}"),
+            DataTypes::Number(num) => {
+                let rounded = (*num * 10000.0).round() / 10000.0;
+                if (rounded - rounded.round()).abs() < 1e-4 {
+                    write!(f, "{}", rounded.round() as i64)
+                } else {
+                    write!(f, "{rounded}")
+                }
+            }
             DataTypes::Bool(b) => write!(f, "{b}"),
             DataTypes::Str(s) => write!(f, "\"{s}\""),
             DataTypes::Array(arr) => write!(
@@ -345,6 +352,7 @@ impl CheckedInterpret {
             Statment::PrintStatement(expr) => {
                 let val = self.visit_expr(expr);
                 match &val {
+                    DataTypes::Str(s) if s == "__tui_rendered__" => {}
                     DataTypes::Str(s) => println!("{s}"),
                     other => println!("{other}"),
                 }
@@ -749,6 +757,10 @@ impl ExpressionVisitor<DataTypes> for CheckedInterpret {
                         .vars
                         .extend(new_env.vars.clone());
                     let result = interp.execute_with_borrows(&body);
+                    let child_errors = interp.environment.borrow().errors.clone();
+                    if !child_errors.is_empty() {
+                        self.environment.borrow_mut().errors.extend(child_errors);
+                    }
                     let explicit_ret = interp.environment.borrow_mut().return_val.take();
                     explicit_ret.or(result).unwrap_or(DataTypes::Number(0.0))
                 }
@@ -2080,13 +2092,44 @@ impl Interpret {
                 m.insert("lines".to_string(), arg_vals[1].clone());
                 DataTypes::Object(m)
             }
-            "tui_dashboard" | "tui_grid" | "tui_fractal" => {
+            "tui_canvas" => {
+                if arg_vals.len() != 2 {
+                    return DataTypes::Str("tui_canvas expects 2 arguments".to_string());
+                }
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str("canvas".to_string()));
+                m.insert("title".to_string(), arg_vals[0].clone());
+                m.insert("matrix".to_string(), arg_vals[1].clone());
+                DataTypes::Object(m)
+            }
+            "tui_barchart" => {
+                if arg_vals.len() != 3 {
+                    return DataTypes::Str("tui_barchart expects 3 arguments".to_string());
+                }
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str("barchart".to_string()));
+                m.insert("title".to_string(), arg_vals[0].clone());
+                m.insert("labels".to_string(), arg_vals[1].clone());
+                m.insert("values".to_string(), arg_vals[2].clone());
+                DataTypes::Object(m)
+            }
+            "tui_row" | "tui_col" => {
+                if arg_vals.len() != 1 {
+                    return DataTypes::Str(format!("{} expects 1 argument", name));
+                }
+                let kind = name.strip_prefix("tui_").unwrap_or("col");
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str(kind.to_string()));
+                m.insert("items".to_string(), arg_vals[0].clone());
+                DataTypes::Object(m)
+            }
+            "tui_dashboard" | "tui_grid" | "tui_fractal" | "tui_render" => {
                 let title = arg_vals
                     .first()
                     .map(|v| format!("{}", v))
                     .unwrap_or_else(|| "psudo TUI".to_string());
                 println!("[tui:{}] {}", name, title);
-                DataTypes::Bool(true)
+                DataTypes::Str("__tui_rendered__".to_string())
             }
             "tokio_sleep_ms" => {
                 let ms = match arg_vals.first() {
@@ -2103,10 +2146,11 @@ impl Interpret {
                 let s = match &arg_vals[0] {
                     DataTypes::Str(st) => st.clone(),
                     DataTypes::Number(n) => {
-                        if n.fract() == 0.0 {
-                            format!("{}", *n as i64)
+                        let rounded = (*n * 10000.0).round() / 10000.0;
+                        if (rounded - rounded.round()).abs() < 1e-4 {
+                            format!("{}", rounded.round() as i64)
                         } else {
-                            format!("{}", n)
+                            format!("{}", rounded)
                         }
                     }
                     other => format!("{}", other),
@@ -2131,7 +2175,18 @@ impl Interpret {
                 }
                 DataTypes::Bool(bool::from(arg_vals[0].clone()))
             }
-            _ => DataTypes::Str(format!("__PSUDO_UNKNOWN_FN__:{}", name)),
+            _ => {
+                let cfg = crate::config::load_project_config();
+                for addon in cfg.addons.values() {
+                    if let Some(mock) = addon.mock_returns.get(name) {
+                        return DataTypes::Str(mock.clone());
+                    }
+                    if addon.builtins.iter().any(|b| b == name) {
+                        return DataTypes::Str(format!("[addon:{}]", name));
+                    }
+                }
+                DataTypes::Str(format!("__PSUDO_UNKNOWN_FN__:{}", name))
+            }
         }
     }
     pub fn visit_expr(&mut self, e: &Expression) -> DataTypes {
@@ -2165,6 +2220,7 @@ impl Interpret {
             Statment::PrintStatement(exp) => {
                 let val = self.visit_expr(exp);
                 match &val {
+                    DataTypes::Str(s) if s == "__tui_rendered__" => {}
                     DataTypes::Str(s) => println!("{s}"),
                     other => println!("{other}"),
                 }

@@ -22,6 +22,8 @@ pub struct AddonSpec {
     pub rust_file: Option<String>,
     #[serde(default)]
     pub daemon_hook: Option<String>,
+    #[serde(default)]
+    pub mock_returns: std::collections::BTreeMap<String, String>,
 }
 
 /// Project configuration for psudo
@@ -128,10 +130,25 @@ pub fn find_project_config() -> Option<PathBuf> {
 
 /// Load project configuration
 pub fn load_project_config() -> ProjectConfig {
+    if let Ok(raw) = std::env::var("PSUDO_CAPSULE_TOML") {
+        if !raw.trim().is_empty() {
+            return parse_project_config_str(raw.trim_start_matches('\u{feff}'));
+        }
+    }
     if let Some(config_path) = find_project_config() {
         if let Ok(content) = fs::read_to_string(&config_path) {
-            if let Ok(config) = toml::from_str::<ProjectConfig>(&content) {
+            if let Ok(config) = toml::from_str::<ProjectConfig>(content.trim_start_matches('\u{feff}')) {
                 return config;
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let local_bin = cwd.join("psudo.bin");
+        if local_bin.exists() {
+            if let Ok(cap) = crate::vfs::WorkspaceCapsule::load_from_file(&local_bin) {
+                if let Some(toml_str) = cap.virtual_files.get("psudo.toml") {
+                    return parse_project_config_str(toml_str.trim_start_matches('\u{feff}'));
+                }
             }
         }
     }

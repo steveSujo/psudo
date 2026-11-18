@@ -412,7 +412,7 @@ impl<'a> InspectionContext<'a> {
                     "clock" => {
                         self.io_effects.push("clock".to_string());
                     }
-                    "tui_dashboard" | "tui_grid" | "tui_fractal" => {
+                    "tui_dashboard" | "tui_grid" | "tui_fractal" | "tui_render" => {
                         self.io_effects.push("tui:render".to_string());
                     }
                     "push" | "pop" => {

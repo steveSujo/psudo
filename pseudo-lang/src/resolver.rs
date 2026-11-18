@@ -117,6 +117,11 @@ impl Resolver {
             "tui_sparkline",
             "tui_table",
             "tui_log",
+            "tui_canvas",
+            "tui_barchart",
+            "tui_row",
+            "tui_col",
+            "tui_render",
             "tokio_sleep_ms",
             "@stub",
         ];

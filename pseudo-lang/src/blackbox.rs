@@ -406,16 +406,38 @@ fn try_synthesize_symbol(
 
     match ensure_daemon_running(model_override) {
         Ok(port) => {
+            let mut addon_builtins: Vec<String> = vec![
+                "tui_dashboard",
+                "tui_grid",
+                "tui_fractal",
+                "tui_metric",
+                "tui_gauge",
+                "tui_sparkline",
+                "tui_table",
+                "tui_log",
+                "tui_canvas",
+                "tui_barchart",
+                "tui_row",
+                "tui_col",
+                "tui_render",
+                "tokio_sleep_ms",
+            ]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect();
+            let cfg = crate::config::load_project_config();
+            for addon in cfg.addons.values() {
+                for b in &addon.builtins {
+                    if !addon_builtins.contains(b) {
+                        addon_builtins.push(b.clone());
+                    }
+                }
+            }
             let synth_req = DaemonSynthRequest {
                 symbol: sym.name.clone(),
                 params: param_names_vec,
                 directive: Some(directive.to_string()),
-                addon_builtins: vec![
-                    "tui_dashboard".to_string(),
-                    "tui_grid".to_string(),
-                    "tui_fractal".to_string(),
-                    "tokio_sleep_ms".to_string(),
-                ],
+                addon_builtins,
             };
             match post_daemon_synth(port, &synth_req) {
                 Ok(resp) => {
@@ -643,6 +665,9 @@ pub fn synthesize_stubs_in_capsule(
     directive: Option<&str>,
     model_path: Option<&Path>,
 ) -> Result<Vec<BlackBoxSynthResult>, String> {
+    if let Some(toml_str) = capsule.virtual_files.get("psudo.toml") {
+        std::env::set_var("PSUDO_CAPSULE_TOML", toml_str);
+    }
     let mut all_results = Vec::new();
     let mut modules: Vec<(String, String)> = capsule
         .virtual_files

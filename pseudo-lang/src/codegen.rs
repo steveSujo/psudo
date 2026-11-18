@@ -143,7 +143,12 @@ pub fn transpile_psudo_to_rust(source: &str, resolve_stubs: bool) -> Result<Stri
         || out.contains("tui_gauge(")
         || out.contains("tui_sparkline(")
         || out.contains("tui_table(")
-        || out.contains("tui_log(");
+        || out.contains("tui_log(")
+        || out.contains("tui_canvas(")
+        || out.contains("tui_barchart(")
+        || out.contains("tui_row(")
+        || out.contains("tui_col(")
+        || out.contains("tui_render(");
     if uses_tui {
         out.push('\n');
         out.push_str(get_tui_rust_runtime());
@@ -183,11 +188,20 @@ pub fn build_rust_binary_from_capsule(
     }
 
     println!("  -> Borrow-checking capsule... {}", crate::utils::green_bold("ok"));
-    let capsule_cfg = capsule
-        .virtual_files
-        .get("psudo.toml")
-        .map(|s| crate::config::parse_project_config_str(s))
-        .unwrap_or_else(crate::config::load_project_config);
+    let capsule_cfg = if let Some(s) = capsule.virtual_files.get("psudo.toml") {
+        std::env::set_var("PSUDO_CAPSULE_TOML", s);
+        crate::config::parse_project_config_str(s)
+    } else {
+        crate::config::load_project_config()
+    };
+
+    let precheck = analyze_psudo_source(&combined_source, &capsule.entrypoint, None)?;
+    if !precheck.diagnostics.is_empty() {
+        return Err(format!(
+            "Static verification failed before cargo build:\n{}",
+            precheck.diagnostics.join("\n")
+        ));
+    }
 
     let mut rust_code = transpile_psudo_to_rust(&combined_source, true)?;
 
@@ -215,12 +229,13 @@ pub fn build_rust_binary_from_capsule(
                 );
             }
             if let Some(rfile) = &addon.rust_file {
+                // Stripping UTF-8 BOM avoids `rustc` unknown-token errors on Windows-authored addons.
                 if let Some(extra_rs) = capsule.virtual_files.get(rfile) {
                     rust_code.push('\n');
-                    rust_code.push_str(extra_rs);
+                    rust_code.push_str(extra_rs.trim_start_matches('\u{feff}'));
                 } else if let Ok(extra_rs) = std::fs::read_to_string(rfile) {
                     rust_code.push('\n');
-                    rust_code.push_str(&extra_rs);
+                    rust_code.push_str(extra_rs.trim_start_matches('\u{feff}'));
                 }
             }
         }
@@ -298,11 +313,16 @@ path = "src/main.rs"
     std::fs::write(&main_rs_path, &rust_code)
         .map_err(|e| format!("Failed to write src/main.rs: {}", e))?;
 
+    // Reuse a shared Cargo target dir across capsules so `ratatui`/`tokio` aren't rebuilt per project.
+    let target_root = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("psudo_shared_target"));
     let mut cmd = std::process::Command::new("cargo");
     cmd.arg("build")
         .arg("--offline")
         .arg("--manifest-path")
-        .arg(&manifest_path);
+        .arg(&manifest_path)
+        .env("CARGO_TARGET_DIR", &target_root);
     if release {
         cmd.arg("--release");
     }
@@ -311,7 +331,11 @@ path = "src/main.rs"
         .map_err(|e| format!("Cargo build failed to launch: {}", e))?;
     if !output.status.success() {
         let mut retry = std::process::Command::new("cargo");
-        retry.arg("build").arg("--manifest-path").arg(&manifest_path);
+        retry
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(&manifest_path)
+            .env("CARGO_TARGET_DIR", &target_root);
         if release {
             retry.arg("--release");
         }
@@ -327,12 +351,20 @@ path = "src/main.rs"
     }
 
     let bin_subdir = if release { "release" } else { "debug" };
+    let shared_exe = target_root
+        .join(bin_subdir)
+        .join(format!("{}.exe", file_stem));
+    let shared_bin = target_root.join(bin_subdir).join(&file_stem);
     let binary_path = out_dir
         .join("target")
         .join(bin_subdir)
         .join(format!("{}.exe", file_stem));
     let binary_fallback = out_dir.join("target").join(bin_subdir).join(&file_stem);
-    let compiled_bin = if binary_path.exists() {
+    let compiled_bin = if shared_exe.exists() {
+        shared_exe
+    } else if shared_bin.exists() {
+        shared_bin
+    } else if binary_path.exists() {
         binary_path
     } else {
         binary_fallback
@@ -534,15 +566,23 @@ fn render_rust_statement(stmt: &Statment, indent: usize) -> String {
     let pad = "    ".repeat(indent);
     match stmt {
         Statment::PrintStatement(expr) => {
-            format!("{}println!(\"{{}}\", {});\n", pad, render_rust_expr(expr))
+            format!(
+                "{}{{ let __pv = {}; if __pv != PsudoVal::Null {{ println!(\"{{}}\", __pv); }} }}\n",
+                pad,
+                render_rust_expr(expr)
+            )
         }
         Statment::LetStatement(tok, init) => {
-            format!(
-                "{}let mut {} = {};\n",
-                pad,
-                tok.text,
-                render_rust_expr(init)
-            )
+            if tok.text == "_" {
+                format!("{}let _ = {};\n", pad, render_rust_expr(init))
+            } else {
+                format!(
+                    "{}let mut {} = {};\n",
+                    pad,
+                    tok.text,
+                    render_rust_expr(init)
+                )
+            }
         }
         Statment::ExpressionStatement(Expression::Assign(name, val)) => {
             format!("{}{} = {};\n", pad, name, render_rust_expr(val))
@@ -757,9 +797,17 @@ fn render_rust_expr(expr: &Expression) -> String {
             format!("{}({})", target_fn, rendered_args)
         }
         Expression::Array(items) => {
+            // Clone variable identifiers inside list literals so composing widgets across layouts never triggers E0382.
             let item_strs = items
                 .iter()
-                .map(render_rust_expr)
+                .map(|a| {
+                    if let Expression::Literal(tok) = a {
+                        if tok.token_type == crate::tokens::TokenType::IDENTIFIER {
+                            return format!("{}.clone()", tok.text);
+                        }
+                    }
+                    render_rust_expr(a)
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("PsudoVal::List(vec![{}])", item_strs)
@@ -842,6 +890,48 @@ pub fn tui_log(title: PsudoVal, lines: PsudoVal) -> PsudoVal {
     PsudoVal::Map(m)
 }
 
+pub fn tui_canvas(title: PsudoVal, matrix: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("canvas".to_string()));
+    m.insert("title".to_string(), title);
+    m.insert("matrix".to_string(), matrix);
+    PsudoVal::Map(m)
+}
+
+pub fn tui_barchart(title: PsudoVal, labels: PsudoVal, values: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("barchart".to_string()));
+    m.insert("title".to_string(), title);
+    m.insert("labels".to_string(), labels);
+    m.insert("values".to_string(), values);
+    PsudoVal::Map(m)
+}
+
+pub fn tui_row(widgets: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("row".to_string()));
+    m.insert("items".to_string(), widgets);
+    PsudoVal::Map(m)
+}
+
+pub fn tui_col(widgets: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("col".to_string()));
+    m.insert("items".to_string(), widgets);
+    PsudoVal::Map(m)
+}
+
+fn tui_format_json_num(v: &serde_json::Value) -> String {
+    if let Some(f) = v.as_f64() {
+        let r = (f * 10000.0).round() / 10000.0;
+        if (r - r.round()).abs() < 1e-4 {
+            return format!("{}", r.round() as i64);
+        }
+        return format!("{}", r);
+    }
+    v.to_string().trim_matches('"').to_string()
+}
+
 fn tui_load_kv_entries(source: &PsudoVal) -> Vec<(String, String)> {
     let mut rows = Vec::new();
     if let PsudoVal::Map(m) = source {
@@ -850,7 +940,7 @@ fn tui_load_kv_entries(source: &PsudoVal) -> Vec<(String, String)> {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(map) = serde_json::from_str::<std::collections::BTreeMap<String, serde_json::Value>>(&content) {
                     for (k, v) in map {
-                        rows.push((k, v.to_string().trim_matches('"').to_string()));
+                        rows.push((k, tui_format_json_num(&v)));
                     }
                     return rows;
                 }
@@ -863,6 +953,154 @@ fn tui_load_kv_entries(source: &PsudoVal) -> Vec<(String, String)> {
         }
     }
     rows
+}
+
+fn tui_format_table_row(r: &PsudoVal) -> String {
+    match r {
+        PsudoVal::Map(rm) => match rm.get("__tui") {
+            Some(PsudoVal::Str(k)) if k == "metric" => {
+                let lbl = rm.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                let val = rm.get("value").map(|v| format!("{}", v)).unwrap_or_default();
+                format!("  {:<16} | {}", lbl, val)
+            }
+            Some(PsudoVal::Str(k)) if k == "gauge" => {
+                let lbl = rm.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                let pct = match rm.get("percent") {
+                    Some(PsudoVal::Num(n)) => (*n).clamp(0.0, 100.0),
+                    _ => 0.0,
+                };
+                format!("  {:<16} | {:.0}%", lbl, pct)
+            }
+            _ => format!("  {}", r),
+        },
+        PsudoVal::List(cols) => {
+            let joined: Vec<String> = cols.iter().map(|c| format!("{}", c)).collect();
+            format!("  {}", joined.join(" | "))
+        }
+        _ => format!("  {}", r),
+    }
+}
+
+fn tui_format_widget_lines(item: &PsudoVal, lines: &mut Vec<String>) {
+    if let PsudoVal::Map(m) = item {
+        if let Some(PsudoVal::Str(kind)) = m.get("__tui") {
+            match kind.as_str() {
+                "metric" => {
+                    let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                    let val = m.get("value").map(|v| format!("{}", v)).unwrap_or_default();
+                    lines.push(format!("[{}] {}", lbl, val));
+                }
+                "gauge" => {
+                    let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                    let pct = match m.get("percent") {
+                        Some(PsudoVal::Num(n)) => (*n).clamp(0.0, 100.0),
+                        _ => 0.0,
+                    };
+                    let filled = ((pct / 100.0) * 20.0).round() as usize;
+                    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(20usize.saturating_sub(filled)));
+                    lines.push(format!("{:<16} [{}] {:.0}%", lbl, bar, pct));
+                }
+                "sparkline" => {
+                    let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                    let bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+                    let mut spark = String::new();
+                    if let Some(PsudoVal::List(nums)) = m.get("data") {
+                        let max_v = nums.iter().filter_map(|v| if let PsudoVal::Num(n) = v { Some(*n) } else { None }).fold(1.0f32, f32::max);
+                        for v in nums {
+                            if let PsudoVal::Num(n) = v {
+                                let idx = (((*n / max_v) * 7.0).round() as usize).min(7);
+                                spark.push(bars[idx]);
+                            }
+                        }
+                    }
+                    lines.push(format!("{:<16} {}", lbl, spark));
+                }
+                "table" => {
+                    let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
+                    lines.push(format!("-- {} --", sub));
+                    if let Some(PsudoVal::List(rows)) = m.get("rows") {
+                        for r in rows {
+                            lines.push(tui_format_table_row(r));
+                        }
+                    }
+                }
+                "log" => {
+                    let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
+                    lines.push(format!("-- {} --", sub));
+                    if let Some(PsudoVal::List(lns)) = m.get("lines") {
+                        for l in lns {
+                            lines.push(format!("  {}", l));
+                        }
+                    }
+                }
+                "canvas" => {
+                    let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
+                    lines.push(format!("-- {} --", sub));
+                    let palette: &[u8] = b" .:-=+*#%@";
+                    if let Some(PsudoVal::List(rows)) = m.get("matrix") {
+                        let max_v = rows
+                            .iter()
+                            .filter_map(|r| if let PsudoVal::List(cols) = r { Some(cols) } else { None })
+                            .flatten()
+                            .filter_map(|v| if let PsudoVal::Num(n) = v { Some(*n) } else { None })
+                            .fold(1.0f32, f32::max);
+                        for r in rows {
+                            if let PsudoVal::List(cols) = r {
+                                let mut s = String::with_capacity(cols.len());
+                                for c in cols {
+                                    let val = match c {
+                                        PsudoVal::Num(n) => (*n).max(0.0),
+                                        PsudoVal::Bool(true) => max_v,
+                                        _ => 0.0,
+                                    };
+                                    let idx = (((val / max_v) * (palette.len() - 1) as f32).round() as usize).min(palette.len() - 1);
+                                    s.push(palette[idx] as char);
+                                }
+                                lines.push(s);
+                            }
+                        }
+                    }
+                }
+                "barchart" => {
+                    let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
+                    lines.push(format!("-- {} --", sub));
+                    if let (Some(PsudoVal::List(labels)), Some(PsudoVal::List(vals))) = (m.get("labels"), m.get("values")) {
+                        let max_v = vals.iter().filter_map(|v| if let PsudoVal::Num(n) = v { Some(*n) } else { None }).fold(1.0f32, f32::max);
+                        for (lbl, v) in labels.iter().zip(vals.iter()) {
+                            let n = match v { PsudoVal::Num(x) => (*x).max(0.0), _ => 0.0 };
+                            let w = ((n / max_v) * 20.0).round() as usize;
+                            lines.push(format!("  {:<12} |{} {}", format!("{}", lbl), "█".repeat(w), v));
+                        }
+                    }
+                }
+                "row" => {
+                    if let Some(PsudoVal::List(items)) = m.get("items") {
+                        let mut parts = Vec::new();
+                        for sub in items {
+                            let mut sub_lines = Vec::new();
+                            tui_format_widget_lines(sub, &mut sub_lines);
+                            parts.push(sub_lines.join("  "));
+                        }
+                        lines.push(parts.join("  |  "));
+                    }
+                }
+                "col" => {
+                    if let Some(PsudoVal::List(items)) = m.get("items") {
+                        for sub in items {
+                            tui_format_widget_lines(sub, lines);
+                        }
+                    }
+                }
+                _ => lines.push(format!("{}", item)),
+            }
+            return;
+        }
+    }
+    lines.push(format!("{}", item));
+}
+
+pub fn tui_render(title: PsudoVal, root: PsudoVal) -> PsudoVal {
+    tui_dashboard(title, root)
 }
 
 fn tui_render_headless(title: &str, lines: &[String]) {
@@ -943,66 +1181,11 @@ pub fn tui_dashboard(title: PsudoVal, source: PsudoVal) -> PsudoVal {
     match &source {
         PsudoVal::List(items) => {
             for item in items {
-                if let PsudoVal::Map(m) = item {
-                    if let Some(PsudoVal::Str(kind)) = m.get("__tui") {
-                        match kind.as_str() {
-                            "metric" => {
-                                let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
-                                let val = m.get("value").map(|v| format!("{}", v)).unwrap_or_default();
-                                lines.push(format!("[{}] {}", lbl, val));
-                            }
-                            "gauge" => {
-                                let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
-                                let pct = match m.get("percent") {
-                                    Some(PsudoVal::Num(n)) => (*n).clamp(0.0, 100.0),
-                                    _ => 0.0,
-                                };
-                                let filled = ((pct / 100.0) * 20.0).round() as usize;
-                                let bar = format!("{}{}", "█".repeat(filled), "░".repeat(20usize.saturating_sub(filled)));
-                                lines.push(format!("{:<16} [{}] {:.0}%", lbl, bar, pct));
-                            }
-                            "sparkline" => {
-                                let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
-                                let bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-                                let mut spark = String::new();
-                                if let Some(PsudoVal::List(nums)) = m.get("data") {
-                                    let max_v = nums.iter().filter_map(|v| if let PsudoVal::Num(n) = v { Some(*n) } else { None }).fold(1.0f32, f32::max);
-                                    for v in nums {
-                                        if let PsudoVal::Num(n) = v {
-                                            let idx = (((*n / max_v) * 7.0).round() as usize).min(7);
-                                            spark.push(bars[idx]);
-                                        }
-                                    }
-                                }
-                                lines.push(format!("{:<16} {}", lbl, spark));
-                            }
-                            "table" => {
-                                let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
-                                lines.push(format!("-- {} --", sub));
-                                if let Some(PsudoVal::List(rows)) = m.get("rows") {
-                                    for r in rows {
-                                        lines.push(format!("  {}", r));
-                                    }
-                                }
-                            }
-                            "log" => {
-                                let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
-                                lines.push(format!("-- {} --", sub));
-                                if let Some(PsudoVal::List(lns)) = m.get("lines") {
-                                    for l in lns {
-                                        lines.push(format!("  {}", l));
-                                    }
-                                }
-                            }
-                            _ => lines.push(format!("{}", item)),
-                        }
-                    } else {
-                        lines.push(format!("{}", item));
-                    }
-                } else {
-                    lines.push(format!("{}", item));
-                }
+                tui_format_widget_lines(item, &mut lines);
             }
+        }
+        PsudoVal::Map(m) if m.contains_key("__tui") => {
+            tui_format_widget_lines(&source, &mut lines);
         }
         _ => {
             for (k, v) in tui_load_kv_entries(&source) {
@@ -1020,35 +1203,52 @@ pub fn tui_dashboard(title: PsudoVal, source: PsudoVal) -> PsudoVal {
     } else {
         tui_render_headless(&t_str, &lines);
     }
-    PsudoVal::Bool(true)
+    // Returning Null suppresses printing a stray trailing `true` below the rendered TUI box.
+    PsudoVal::Null
 }
 
 pub fn tui_grid(title: PsudoVal, source: PsudoVal) -> PsudoVal {
     let t_str = format!("{}", title);
-    let entries = tui_load_kv_entries(&source);
-    let w: usize = 36;
-    let h: usize = 12;
-    let mut grid = vec![vec![false; w]; h];
-    if let Ok(seed_raw) = std::fs::read_to_string(".pseudo/sandbox/life_seed.json") {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&seed_raw) {
-            if let Some(cells) = val.get("live_cells").and_then(|c| c.as_array()) {
-                for pair in cells {
-                    if let (Some(r), Some(c)) = (pair.get(0).and_then(|v| v.as_u64()), pair.get(1).and_then(|v| v.as_u64())) {
-                        let rr = (r as usize) % h;
-                        let cc = (c as usize) % w;
-                        grid[rr][cc] = true;
+    let mut lines = Vec::new();
+    if let PsudoVal::List(rows) = &source {
+        for r in rows {
+            if let PsudoVal::List(cols) = r {
+                let row_str: String = cols
+                    .iter()
+                    .map(|c| match c {
+                        PsudoVal::Num(n) if *n != 0.0 => '█',
+                        PsudoVal::Bool(true) => '█',
+                        _ => '·',
+                    })
+                    .collect();
+                lines.push(row_str);
+            }
+        }
+    } else {
+        let entries = tui_load_kv_entries(&source);
+        let w: usize = 36;
+        let h: usize = 12;
+        let mut grid = vec![vec![false; w]; h];
+        if let Ok(seed_raw) = std::fs::read_to_string(".pseudo/sandbox/life_seed.json") {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&seed_raw) {
+                if let Some(cells) = val.get("live_cells").and_then(|c| c.as_array()) {
+                    for pair in cells {
+                        if let (Some(r), Some(c)) = (pair.get(0).and_then(|v| v.as_u64()), pair.get(1).and_then(|v| v.as_u64())) {
+                            let rr = (r as usize) % h;
+                            let cc = (c as usize) % w;
+                            grid[rr][cc] = true;
+                        }
                     }
                 }
             }
         }
-    }
-    let mut lines = Vec::new();
-    for (k, v) in entries {
-        lines.push(format!("{} = {}", k, v));
-    }
-    for row in &grid {
-        let row_str: String = row.iter().map(|&alive| if alive { '█' } else { '·' }).collect();
-        lines.push(row_str);
+        for (k, v) in entries {
+            lines.push(format!("{} = {}", k, v));
+        }
+        for row in &grid {
+            let row_str: String = row.iter().map(|&alive| if alive { '█' } else { '·' }).collect();
+            lines.push(row_str);
+        }
     }
     if std::io::IsTerminal::is_terminal(&std::io::stdout())
         && std::env::var("PSUDO_TUI_HEADLESS").is_err()
@@ -1057,7 +1257,7 @@ pub fn tui_grid(title: PsudoVal, source: PsudoVal) -> PsudoVal {
     } else {
         tui_render_headless(&t_str, &lines);
     }
-    PsudoVal::Bool(true)
+    PsudoVal::Null
 }
 
 pub fn tui_fractal(title: PsudoVal, source: PsudoVal) -> PsudoVal {
@@ -1110,7 +1310,7 @@ pub fn tui_fractal(title: PsudoVal, source: PsudoVal) -> PsudoVal {
     } else {
         tui_render_headless(&t_str, &lines);
     }
-    PsudoVal::Bool(true)
+    PsudoVal::Null
 }
 "#
 }
@@ -1135,10 +1335,11 @@ impl std::fmt::Display for PsudoVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PsudoVal::Num(n) => {
-                if n.fract() == 0.0 {
-                    write!(f, "{}", *n as i64)
+                let rounded = (*n * 10000.0).round() / 10000.0;
+                if (rounded - rounded.round()).abs() < 1e-4 {
+                    write!(f, "{}", rounded.round() as i64)
                 } else {
-                    write!(f, "{}", n)
+                    write!(f, "{}", rounded)
                 }
             }
             PsudoVal::Bool(b) => write!(f, "{}", b),

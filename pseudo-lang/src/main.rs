@@ -669,6 +669,17 @@ fn run_cmd_vfs(args: &[String]) {
                                     );
                                     process::exit(1);
                                 }
+                            } else if !vpath.ends_with(".psudo") {
+                                if let Some(content) = cap.get_file(&vpath) {
+                                    println!("{}", content);
+                                } else {
+                                    eprintln!(
+                                        "Virtual file '{}' not found in {}",
+                                        vpath,
+                                        bin_path.display()
+                                    );
+                                    process::exit(1);
+                                }
                             } else {
                                 match cap.extract_stubs(&vpath) {
                                     Ok(stubs) => {
@@ -1187,7 +1198,7 @@ fn run_cmd_vfs(args: &[String]) {
         }
         "wire" => {
             if sub_args.contains(&"-h".to_string()) || sub_args.contains(&"--help".to_string()) {
-                println!("Usage: psudo vfs wire [<CAPSULE> | --capsule <PATH>] [--entry <FN>] [--call \"<STMT_OR_EXPR>\" ...] [--return \"<EXPR>\"] [--location <VPATH>]");
+                println!("Usage: psudo vfs wire [<CAPSULE> | --capsule <PATH>] [--entry <FN>] [--call \"<STMT_OR_EXPR>\" ...] [--stdin] [--return \"<EXPR>\"] [--location <VPATH>]");
                 println!("Wire entrypoint function (default: main_task) to call synthesized functions.");
                 return;
             }
@@ -1196,6 +1207,7 @@ fn run_cmd_vfs(args: &[String]) {
             let mut explicit_location = false;
             let mut entry_fn = "main_task".to_string();
             let mut calls: Vec<String> = Vec::new();
+            let mut read_stdin = false;
             let mut return_expr: Option<String> = None;
 
             let mut i = 0;
@@ -1218,6 +1230,10 @@ fn run_cmd_vfs(args: &[String]) {
                         calls.push(sub_args[i + 1].clone());
                         i += 2;
                     }
+                    "--stdin" => {
+                        read_stdin = true;
+                        i += 1;
+                    }
                     "--return" | "-r" if i + 1 < sub_args.len() => {
                         return_expr = Some(sub_args[i + 1].clone());
                         i += 2;
@@ -1229,6 +1245,21 @@ fn run_cmd_vfs(args: &[String]) {
                     other => {
                         eprintln!("Error: Unknown or incomplete flag '{}' for vfs wire", other);
                         process::exit(1);
+                    }
+                }
+            }
+
+            if read_stdin {
+                use std::io::Read;
+                let mut buf = String::new();
+                if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+                    eprintln!("Error reading stdin for vfs wire: {}", e);
+                    process::exit(1);
+                }
+                for line in buf.lines() {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        calls.push(trimmed.to_string());
                     }
                 }
             }
@@ -1310,6 +1341,8 @@ fn run_cmd_check(args: &[String]) {
             json_output = true;
         } else if args[i] == "--all-modules" || args[i] == "-a" {
             all_modules = true;
+        } else if args[i] == "-b" || args[i] == "--borrow" {
+            // Borrow checks always run in `check`; accept `-b` so existing CLI guides keep working.
         } else if args[i].starts_with('-') {
             eprintln!("Error: Unknown flag '{}' for check", args[i]);
             process::exit(1);
@@ -1322,6 +1355,9 @@ fn run_cmd_check(args: &[String]) {
     match resolve_capsule_and_vpath(&target) {
         Ok((bin_path, _)) => match WorkspaceCapsule::load_from_file(&bin_path) {
             Ok(cap) => {
+                if let Some(toml_str) = cap.virtual_files.get("psudo.toml") {
+                    std::env::set_var("PSUDO_CAPSULE_TOML", toml_str);
+                }
                 if all_modules {
                     let mut total_stubs = 0;
                     let mut module_results = Vec::new();
@@ -1644,7 +1680,7 @@ fn run_cmd_synth(args: &[String]) {
 
 fn run_cmd_build(args: &[String]) {
     if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        println!("Usage: psudo build [<CAPSULE|FILE>] [-o <DIR>] [--release] [--run]");
+        println!("Usage: psudo build [<CAPSULE|FILE>] [-o <DIR>] [--release] [--run] [--headless]");
         println!("Compile verified .psudo capsule or file to a zero-unwrap native Rust binary.");
         return;
     }
@@ -1653,6 +1689,7 @@ fn run_cmd_build(args: &[String]) {
     let mut custom_out_dir: Option<PathBuf> = None;
     let mut release = false;
     let mut run = false;
+    let mut headless = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -1665,6 +1702,7 @@ fn run_cmd_build(args: &[String]) {
             }
             "--release" => release = true,
             "--run" => run = true,
+            "--headless" => headless = true,
             arg if !arg.starts_with('-') && !target_set => {
                 target = arg.to_string();
                 target_set = true;
@@ -1674,6 +1712,9 @@ fn run_cmd_build(args: &[String]) {
         i += 1;
     }
     let target = target.as_str();
+    if headless {
+        std::env::set_var("PSUDO_TUI_HEADLESS", "1");
+    }
 
     if target.ends_with(".psudo") && Path::new(target).exists() {
         let p = Path::new(target);
@@ -1715,7 +1756,11 @@ fn run_cmd_build(args: &[String]) {
                 custom_out_dir.unwrap_or_else(|| workspace_root.join(".pseudo").join("build"));
 
             match WorkspaceCapsule::load_from_file(&bin_path) {
-                Ok(cap) => match build_rust_binary_from_capsule(&cap, &out_dir, release, run) {
+                Ok(cap) => {
+                    if let Some(toml_str) = cap.virtual_files.get("psudo.toml") {
+                        std::env::set_var("PSUDO_CAPSULE_TOML", toml_str);
+                    }
+                    match build_rust_binary_from_capsule(&cap, &out_dir, release, run) {
                     Ok(report) => {
                         println!("✓ Verifiable Rust binary artifact built successfully!");
                         println!("  -> Binary: {}", report.binary_path.display());
@@ -1739,7 +1784,8 @@ fn run_cmd_build(args: &[String]) {
                         eprintln!("Build error: {}", e);
                         process::exit(1);
                     }
-                },
+                    }
+                }
                 Err(e) => {
                     eprintln!("Error loading capsule: {}", e);
                     process::exit(1);
@@ -1755,7 +1801,7 @@ fn run_cmd_build(args: &[String]) {
 
 fn run_cmd_run(args: &[String]) {
     if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        println!("Usage: psudo run [<CAPSULE|FILE>] [--bin] [--call \"<EXPR>\"]");
+        println!("Usage: psudo run [<CAPSULE|FILE>] [--bin] [--headless] [--call \"<EXPR>\"]");
         println!("Execute capsule entrypoint or evaluate a --call expression against capsule functions.");
         return;
     }
@@ -1768,6 +1814,7 @@ fn run_cmd_run(args: &[String]) {
     while i < args.len() {
         match args[i].as_str() {
             "--bin" => is_bin = true,
+            "--headless" => std::env::set_var("PSUDO_TUI_HEADLESS", "1"),
             "--call" if i + 1 < args.len() => {
                 call_expr = Some(args[i + 1].clone());
                 i += 1;
@@ -1814,6 +1861,9 @@ fn run_cmd_run(args: &[String]) {
         match resolve_capsule_and_vpath(&target) {
             Ok((bin_path, _)) => match WorkspaceCapsule::load_from_file(&bin_path) {
                 Ok(cap) => {
+                    if let Some(toml_str) = cap.virtual_files.get("psudo.toml") {
+                        std::env::set_var("PSUDO_CAPSULE_TOML", toml_str);
+                    }
                     let source = cap
                         .virtual_files
                         .get(&cap.entrypoint)

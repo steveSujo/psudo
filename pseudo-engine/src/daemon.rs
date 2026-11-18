@@ -236,7 +236,7 @@ fn handle_client(
                     format!("fn {}({})\n    return 0", req.symbol, req.params.join(", "))
                 };
             let synthesized_psudo = if let Some(addon_fn) = detected_addon_call {
-                splice_addon_builtin_return(&raw_psudo, &req.symbol, &addon_fn)
+                splice_addon_builtin_return(&raw_psudo, &req.symbol, &req.params, &addon_fn)
             } else {
                 raw_psudo
             };
@@ -265,8 +265,16 @@ fn split_addon_directive(directive: &str, extra_builtins: &[String]) -> (String,
         "tui_dashboard",
         "tui_grid",
         "tui_fractal",
+        "tui_metric",
+        "tui_gauge",
+        "tui_sparkline",
         "tui_table",
         "tui_log",
+        "tui_canvas",
+        "tui_barchart",
+        "tui_row",
+        "tui_col",
+        "tui_render",
     ];
     let mut matched: Option<String> = None;
     for b in builtin_list.iter().copied().chain(extra_builtins.iter().map(String::as_str)) {
@@ -292,7 +300,28 @@ fn split_addon_directive(directive: &str, extra_builtins: &[String]) -> (String,
 
 // Wrapping the synthesized return expression in an addon builtin call lets the 100M model
 // focus on data/math while the addon renders the result.
-fn splice_addon_builtin_return(psudo_code: &str, symbol: &str, addon_fn: &str) -> String {
+fn splice_addon_builtin_return(
+    psudo_code: &str,
+    symbol: &str,
+    params: &[String],
+    addon_fn: &str,
+) -> String {
+    let custom_args = if params.len() == 2
+        && matches!(
+            addon_fn,
+            "tui_gauge" | "tui_metric" | "tui_sparkline" | "tui_table" | "tui_log" | "tui_canvas" | "tui_render"
+        ) {
+        Some(params.join(", "))
+    } else if !addon_fn.starts_with("tui_") && !params.is_empty() {
+        Some(params.join(", "))
+    } else {
+        None
+    };
+
+    if let Some(args_str) = custom_args {
+        return format!("fn {}({})\n    return {}({})", symbol, params.join(", "), addon_fn, args_str);
+    }
+
     let mut lines: Vec<String> = psudo_code.lines().map(ToString::to_string).collect();
     if let Some(last_ret_idx) = lines.iter().rposition(|l| l.trim_start().starts_with("return ")) {
         let indent_len = lines[last_ret_idx].len() - lines[last_ret_idx].trim_start().len();
@@ -329,6 +358,23 @@ fn rebind_psudo_signature(psudo_code: &str, target_sym: &str, target_params: &[S
     }
     let header = format!("fn {}({})", target_sym, target_params.join(", "));
     let mut body = rest.join("\n");
+
+    // Rename generated locals that collide with target param names first so `let total = ...`
+    // doesn't shadow `total` before its initializer is evaluated.
+    let gen_locals: Vec<String> = body
+        .lines()
+        .filter_map(|l| {
+            l.trim()
+                .strip_prefix("let ")
+                .and_then(|r| r.split('=').next())
+                .map(|s| s.trim().to_string())
+        })
+        .filter(|l| !l.is_empty() && target_params.contains(l) && !gen_params.contains(l))
+        .collect();
+    for local in gen_locals {
+        body = replace_ident(&body, &local, &format!("__loc_{}", local));
+    }
+
     if gen_params.len() == target_params.len() {
         for (old_p, new_p) in gen_params.iter().zip(target_params.iter()) {
             if old_p != new_p && !old_p.is_empty() {
@@ -407,6 +453,11 @@ fn is_psudo_reserved_or_builtin(ident: &str) -> bool {
             | "tui_sparkline"
             | "tui_table"
             | "tui_log"
+            | "tui_canvas"
+            | "tui_barchart"
+            | "tui_row"
+            | "tui_col"
+            | "tui_render"
             | "tokio_sleep_ms"
     )
 }
@@ -653,11 +704,28 @@ mod tests {
     #[test]
     fn test_splice_addon_builtin_return_wraps_last_return() {
         let src = "fn summarize(path)\n    let net = 2035\n    return net";
-        let spliced = splice_addon_builtin_return(src, "summarize", "tui_dashboard");
+        let spliced =
+            splice_addon_builtin_return(src, "summarize", &["path".into()], "tui_dashboard");
         assert_eq!(
             spliced,
             "fn summarize(path)\n    let net = 2035\n    return tui_dashboard(\"summarize\", net)"
         );
+
+        let wrapped = splice_addon_builtin_return(
+            src,
+            "ping_worker",
+            &["name".into()],
+            "worker_ping",
+        );
+        assert_eq!(wrapped, "fn ping_worker(name)\n    return worker_ping(name)");
+    }
+
+    #[test]
+    fn test_rebind_renames_colliding_local_vars() {
+        let gen = "fn calc_uptime_pct(a, b)\n    let total = a + b\n    return total";
+        let out = rebind_psudo_signature(gen, "calc_uptime_pct", &["up".into(), "total".into()]);
+        assert!(out.contains("let __loc_total = up + total"));
+        assert!(out.contains("return __loc_total"));
     }
 
     #[test]

@@ -23,6 +23,8 @@ pub struct SynthRequest {
     pub params: Vec<String>,
     #[serde(default)]
     pub directive: Option<String>,
+    #[serde(default)]
+    pub addon_builtins: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,12 +200,13 @@ fn handle_client(
                 .as_ref()
                 .map(|d| !d.trim().is_empty())
                 .unwrap_or(false);
-            let pir_prompt = if let Some(d) = &req.directive {
-                if !d.trim().is_empty() {
-                    format!("Prompt: {}\n<pir>\n", d.trim())
-                } else {
-                    format!("f {} ({}) [\n", req.symbol, param_names)
-                }
+            let (clean_directive, detected_addon_call) = req
+                .directive
+                .as_deref()
+                .map(|d| split_addon_directive(d, &req.addon_builtins))
+                .unwrap_or((String::new(), None));
+            let pir_prompt = if !clean_directive.is_empty() {
+                format!("Prompt: {}\n<pir>\n", clean_directive)
             } else {
                 format!("f {} ({}) [\n", req.symbol, param_names)
             };
@@ -222,7 +225,7 @@ fn handle_client(
             } else {
                 format!("{}{}", pir_prompt, generated_buf)
             };
-            let synthesized_psudo =
+            let raw_psudo =
                 if let Some(psudo_out) = pir_decompiler::decompile_pir_to_psudo(&full_pir) {
                     if has_directive {
                         rebind_psudo_signature(&psudo_out, &req.symbol, &req.params)
@@ -232,6 +235,11 @@ fn handle_client(
                 } else {
                     format!("fn {}({})\n    return 0", req.symbol, req.params.join(", "))
                 };
+            let synthesized_psudo = if let Some(addon_fn) = detected_addon_call {
+                splice_addon_builtin_return(&raw_psudo, &req.symbol, &addon_fn)
+            } else {
+                raw_psudo
+            };
 
             let resp = SynthResponse {
                 symbol: req.symbol,
@@ -247,6 +255,57 @@ fn handle_client(
             send_response(stream, 404, "Not Found", "text/plain", "Not Found")?;
             Ok(false)
         }
+    }
+}
+
+// Stripping addon tail clauses before inference keeps the 100M model strictly in-distribution
+// while still letting directives request post-synthesis addon wrapping like `tui_dashboard`.
+fn split_addon_directive(directive: &str, extra_builtins: &[String]) -> (String, Option<String>) {
+    let builtin_list = [
+        "tui_dashboard",
+        "tui_grid",
+        "tui_fractal",
+        "tui_table",
+        "tui_log",
+    ];
+    let mut matched: Option<String> = None;
+    for b in builtin_list.iter().copied().chain(extra_builtins.iter().map(String::as_str)) {
+        if directive.contains(b) {
+            matched = Some(b.to_string());
+            break;
+        }
+    }
+    if let Some(ref b) = matched {
+        let cleaned = directive
+            .replace(&format!("and render with {}", b), "")
+            .replace(&format!("render with {}", b), "")
+            .replace(b, "")
+            .trim()
+            .trim_end_matches(',')
+            .trim()
+            .to_string();
+        (cleaned, matched)
+    } else {
+        (directive.trim().to_string(), None)
+    }
+}
+
+// Wrapping the synthesized return expression in an addon builtin call lets the 100M model
+// focus on data/math while the addon renders the result.
+fn splice_addon_builtin_return(psudo_code: &str, symbol: &str, addon_fn: &str) -> String {
+    let mut lines: Vec<String> = psudo_code.lines().map(ToString::to_string).collect();
+    if let Some(last_ret_idx) = lines.iter().rposition(|l| l.trim_start().starts_with("return ")) {
+        let indent_len = lines[last_ret_idx].len() - lines[last_ret_idx].trim_start().len();
+        let indent = " ".repeat(indent_len);
+        let expr = lines[last_ret_idx]
+            .trim_start()
+            .strip_prefix("return ")
+            .unwrap_or("0")
+            .trim();
+        lines[last_ret_idx] = format!("{}return {}(\"{}\", {})", indent, addon_fn, symbol, expr);
+        lines.join("\n")
+    } else {
+        format!("{}\n    return {}(\"{}\", 0)", psudo_code, addon_fn, symbol)
     }
 }
 
@@ -340,6 +399,15 @@ fn is_psudo_reserved_or_builtin(ident: &str) -> bool {
             | "persistent_kv"
             | "get"
             | "set"
+            | "tui_dashboard"
+            | "tui_grid"
+            | "tui_fractal"
+            | "tui_metric"
+            | "tui_gauge"
+            | "tui_sparkline"
+            | "tui_table"
+            | "tui_log"
+            | "tokio_sleep_ms"
     )
 }
 
@@ -561,5 +629,44 @@ mod tests {
         assert!(!out.contains("code"));
         assert!(!out.contains("return st\n"));
         assert!(out.contains("status >= 40"));
+    }
+
+    #[test]
+    fn test_split_addon_directive_strips_tail_and_detects_builtin() {
+        let extra = vec!["custom_addon_render".to_string()];
+        let (clean, addon) = split_addon_directive(
+            "Load JSON sensors from path, store in persistent_kv alerts, and render with tui_dashboard",
+            &extra,
+        );
+        assert_eq!(
+            clean,
+            "Load JSON sensors from path, store in persistent_kv alerts"
+        );
+        assert_eq!(addon.as_deref(), Some("tui_dashboard"));
+
+        let (clean_custom, addon_custom) =
+            split_addon_directive("compute total and render with custom_addon_render", &extra);
+        assert_eq!(clean_custom, "compute total");
+        assert_eq!(addon_custom.as_deref(), Some("custom_addon_render"));
+    }
+
+    #[test]
+    fn test_splice_addon_builtin_return_wraps_last_return() {
+        let src = "fn summarize(path)\n    let net = 2035\n    return net";
+        let spliced = splice_addon_builtin_return(src, "summarize", "tui_dashboard");
+        assert_eq!(
+            spliced,
+            "fn summarize(path)\n    let net = 2035\n    return tui_dashboard(\"summarize\", net)"
+        );
+    }
+
+    #[test]
+    fn test_rebind_preserves_tui_and_tokio_addon_builtins() {
+        let gen = "fn run_view(path)\n    let m = tui_metric(\"Net\", 100)\n    let g = tui_gauge(\"Used\", 50)\n    let _ = tokio_sleep_ms(10)\n    return tui_dashboard(\"Title\", m)";
+        let out = rebind_psudo_signature(gen, "run_view", &["path".into()]);
+        assert!(out.contains("tui_metric(\"Net\", 100)"));
+        assert!(out.contains("tui_gauge(\"Used\", 50)"));
+        assert!(out.contains("tokio_sleep_ms(10)"));
+        assert!(out.contains("tui_dashboard(\"Title\", m)"));
     }
 }

@@ -28,4 +28,10 @@ fn main()
     print("Seeded Game of Life cells: " + str(count))
     return tui_grid("Conway's Game of Life", persistent_kv("life_state"))
 
+test "conway survival and birth rules"
+    assert_eq(next_cell_state(1, 2), 1)
+    assert_eq(next_cell_state(1, 3), 1)
+    assert_eq(next_cell_state(1, 1), 0)
+    assert_eq(next_cell_state(0, 3), 1)
+
 main()

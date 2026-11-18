@@ -249,3 +249,40 @@ rust_file = "src/worker_addon.rs"
     );
     assert!(cfg.addons.contains_key("my_worker"));
 }
+
+#[test]
+fn test_codegen_discard_let_clones_array_vars_and_composable_tui_widgets() {
+    let source = r#"
+fn main()
+    let m1 = tui_metric("CPU", 86.6)
+    let m2 = tui_metric("MEM", 42)
+    let _ = tokio_sleep_ms(1)
+    let row = tui_row([m1, m2])
+    let grid = tui_canvas("Life", [[0, 1], [1, 0]])
+    let bars = tui_barchart("Spend", ["Rent", "Food"], [1200, 450])
+    let tbl = tui_table("Services", [m1, m2])
+    return tui_render("Monitor", [row, grid, bars, tbl])
+"#;
+    let rust = psudo::codegen::transpile_psudo_to_rust(source, false).unwrap();
+    assert!(rust.contains("let _ = tokio_sleep_ms("), "Must not emit `let mut _`");
+    assert!(!rust.contains("let mut _ ="), "Found invalid `let mut _ =`");
+    assert!(rust.contains("m1.clone()"), "Array literal must clone identifiers");
+    assert!(rust.contains("pub fn tui_canvas("));
+    assert!(rust.contains("pub fn tui_barchart("));
+    assert!(rust.contains("pub fn tui_row("));
+    assert!(rust.contains("pub fn tui_render("));
+    assert!(rust.contains("#[tokio::main]\npub async fn main()"));
+    assert!(!rust.contains(".unwrap()"));
+    assert!(!rust.contains(".expect()"));
+}
+
+#[test]
+fn test_addon_bom_stripping_and_mock_returns_parse() {
+    let raw_toml = "\u{feff}[addons.worker]\nbuiltins = [\"worker_ping\"]\nrust_file = \"src/worker.rs\"\n[addons.worker.mock_returns]\nworker_ping = \"pong:test\"\n";
+    let cfg = psudo::config::parse_project_config_str(raw_toml.trim_start_matches('\u{feff}'));
+    let worker = cfg.addons.get("worker").expect("worker addon");
+    assert_eq!(
+        worker.mock_returns.get("worker_ping").map(String::as_str),
+        Some("pong:test")
+    );
+}

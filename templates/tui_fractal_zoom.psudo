@@ -35,4 +35,8 @@ fn main()
     print("Fractal center escape depth: " + str(depth))
     return tui_fractal("2D Mandelbrot Explorer", persistent_kv("fractal_state"))
 
+test "mandelbrot origin bounded and far point escapes"
+    assert_eq(mandelbrot_escape(0, 0, 16), 16)
+    assert(mandelbrot_escape(3, 3, 16) < 16)
+
 main()

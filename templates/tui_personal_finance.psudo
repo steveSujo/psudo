@@ -39,4 +39,9 @@ fn main()
     print("Net savings: " + str(net))
     return tui_dashboard("Personal Finance Dashboard", persistent_kv("finance_ledger"))
 
+test "budget clamping bounds"
+    assert_eq(clamp_budget_pct(1000, 0), 100)
+    assert_eq(clamp_budget_pct(3000, 2000), 100)
+    assert_eq(clamp_budget_pct(500, 1000), 50)
+
 main()

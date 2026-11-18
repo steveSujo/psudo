@@ -2030,6 +2030,72 @@ impl Interpret {
                     _ => DataTypes::Str("expect expects Result".to_string()),
                 }
             }
+            "tui_metric" => {
+                if arg_vals.len() != 2 {
+                    return DataTypes::Str("tui_metric expects 2 arguments".to_string());
+                }
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str("metric".to_string()));
+                m.insert("label".to_string(), arg_vals[0].clone());
+                m.insert("value".to_string(), arg_vals[1].clone());
+                DataTypes::Object(m)
+            }
+            "tui_gauge" => {
+                if arg_vals.len() != 2 {
+                    return DataTypes::Str("tui_gauge expects 2 arguments".to_string());
+                }
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str("gauge".to_string()));
+                m.insert("label".to_string(), arg_vals[0].clone());
+                m.insert("percent".to_string(), arg_vals[1].clone());
+                DataTypes::Object(m)
+            }
+            "tui_sparkline" => {
+                if arg_vals.len() != 2 {
+                    return DataTypes::Str("tui_sparkline expects 2 arguments".to_string());
+                }
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str("sparkline".to_string()));
+                m.insert("label".to_string(), arg_vals[0].clone());
+                m.insert("data".to_string(), arg_vals[1].clone());
+                DataTypes::Object(m)
+            }
+            "tui_table" => {
+                if arg_vals.len() != 2 {
+                    return DataTypes::Str("tui_table expects 2 arguments".to_string());
+                }
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str("table".to_string()));
+                m.insert("title".to_string(), arg_vals[0].clone());
+                m.insert("rows".to_string(), arg_vals[1].clone());
+                DataTypes::Object(m)
+            }
+            "tui_log" => {
+                if arg_vals.len() != 2 {
+                    return DataTypes::Str("tui_log expects 2 arguments".to_string());
+                }
+                let mut m = std::collections::HashMap::new();
+                m.insert("__tui".to_string(), DataTypes::Str("log".to_string()));
+                m.insert("title".to_string(), arg_vals[0].clone());
+                m.insert("lines".to_string(), arg_vals[1].clone());
+                DataTypes::Object(m)
+            }
+            "tui_dashboard" | "tui_grid" | "tui_fractal" => {
+                let title = arg_vals
+                    .first()
+                    .map(|v| format!("{}", v))
+                    .unwrap_or_else(|| "psudo TUI".to_string());
+                println!("[tui:{}] {}", name, title);
+                DataTypes::Bool(true)
+            }
+            "tokio_sleep_ms" => {
+                let ms = match arg_vals.first() {
+                    Some(DataTypes::Number(n)) => (*n).max(0.0) as u64,
+                    _ => 0,
+                };
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+                DataTypes::Bool(true)
+            }
             "str" => {
                 if arg_vals.len() != 1 {
                     return DataTypes::Str("str expects 1 argument".to_string());

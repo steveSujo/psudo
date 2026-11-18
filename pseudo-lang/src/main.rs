@@ -388,9 +388,39 @@ fn run_cmd_init(args: &[String]) {
                 include_str!("../../templates/.pseudo/sandbox/usage.json"),
             )),
         ),
+        "life" | "tui_game_of_life" => (
+            Some(
+                include_str!("../../templates/tui_game_of_life.psudo")
+                    .replace("templates/.pseudo/sandbox/", ".pseudo/sandbox/"),
+            ),
+            Some((
+                "life_seed.json",
+                include_str!("../../templates/.pseudo/sandbox/life_seed.json"),
+            )),
+        ),
+        "fractal" | "tui_fractal_zoom" => (
+            Some(
+                include_str!("../../templates/tui_fractal_zoom.psudo")
+                    .replace("templates/.pseudo/sandbox/", ".pseudo/sandbox/"),
+            ),
+            Some((
+                "fractal_view.json",
+                include_str!("../../templates/.pseudo/sandbox/fractal_view.json"),
+            )),
+        ),
+        "finance" | "tui_personal_finance" => (
+            Some(
+                include_str!("../../templates/tui_personal_finance.psudo")
+                    .replace("templates/.pseudo/sandbox/", ".pseudo/sandbox/"),
+            ),
+            Some((
+                "finance.json",
+                include_str!("../../templates/.pseudo/sandbox/finance.json"),
+            )),
+        ),
         other => {
             eprintln!(
-                "Error: Unknown template '{}'. Valid templates: blank, log, sensor, quota",
+                "Error: Unknown template '{}'. Valid templates: blank, log, sensor, quota, life, fractal, finance",
                 other
             );
             process::exit(1);

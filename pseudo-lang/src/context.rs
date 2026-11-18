@@ -412,6 +412,9 @@ impl<'a> InspectionContext<'a> {
                     "clock" => {
                         self.io_effects.push("clock".to_string());
                     }
+                    "tui_dashboard" | "tui_grid" | "tui_fractal" => {
+                        self.io_effects.push("tui:render".to_string());
+                    }
                     "push" | "pop" => {
                         if let Some(Expression::Literal(tok)) = args.first() {
                             if self.params.contains(&tok.text) {

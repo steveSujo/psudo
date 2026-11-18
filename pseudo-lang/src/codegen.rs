@@ -90,7 +90,37 @@ pub fn transpile_psudo_to_rust(source: &str, resolve_stubs: bool) -> Result<Stri
     }
 
     // Render fn main()
-    out.push_str("pub fn main() {\n");
+    // Emitting `#[tokio::main] pub async fn main()` only when async addon stubs are called
+    // keeps `.psudo` syntax untouched while still unlocking async Rust crates.
+    let project_cfg = crate::config::load_project_config();
+    let mut main_attr: Option<String> = None;
+    let mut main_async = false;
+    if source.contains("tokio_sleep_ms(") {
+        main_attr = Some("#[tokio::main]".to_string());
+        main_async = true;
+    }
+    for addon in project_cfg.addons.values() {
+        let used = addon
+            .builtins
+            .iter()
+            .any(|b| source.contains(&format!("{}(", b)));
+        if used {
+            if let Some(attr) = &addon.rust_main_attr {
+                main_attr = Some(attr.clone());
+            }
+            if addon.rust_main_async {
+                main_async = true;
+            }
+        }
+    }
+    if let Some(attr) = main_attr {
+        out.push_str(&format!("{}\n", attr));
+    }
+    if main_async {
+        out.push_str("pub async fn main() {\n");
+    } else {
+        out.push_str("pub fn main() {\n");
+    }
     let mut calls_user_main = false;
     for s in top_level_statements {
         if let Statment::ExpressionStatement(Expression::Call(name, _)) = s {
@@ -105,6 +135,22 @@ pub fn transpile_psudo_to_rust(source: &str, resolve_stubs: bool) -> Result<Stri
         out.push_str("    let _ = psudo_user_main();\n");
     }
     out.push_str("}\n");
+
+    let uses_tui = out.contains("tui_dashboard(")
+        || out.contains("tui_grid(")
+        || out.contains("tui_fractal(")
+        || out.contains("tui_metric(")
+        || out.contains("tui_gauge(")
+        || out.contains("tui_sparkline(")
+        || out.contains("tui_table(")
+        || out.contains("tui_log(");
+    if uses_tui {
+        out.push('\n');
+        out.push_str(get_tui_rust_runtime());
+    }
+    if out.contains("tokio_sleep_ms(") {
+        out.push_str("\npub fn tokio_sleep_ms(ms: PsudoVal) -> PsudoVal { let m = match ms { PsudoVal::Num(n) => n.max(0.0) as u64, _ => 0 }; std::thread::sleep(std::time::Duration::from_millis(m)); PsudoVal::Bool(true) }\n");
+    }
 
     Ok(out)
 }
@@ -137,7 +183,48 @@ pub fn build_rust_binary_from_capsule(
     }
 
     println!("  -> Borrow-checking capsule... {}", crate::utils::green_bold("ok"));
-    let rust_code = transpile_psudo_to_rust(&combined_source, true)?;
+    let capsule_cfg = capsule
+        .virtual_files
+        .get("psudo.toml")
+        .map(|s| crate::config::parse_project_config_str(s))
+        .unwrap_or_else(crate::config::load_project_config);
+
+    let mut rust_code = transpile_psudo_to_rust(&combined_source, true)?;
+
+    let mut custom_cargo_deps: Vec<String> = Vec::new();
+    for addon in capsule_cfg.addons.values() {
+        let used = addon
+            .builtins
+            .iter()
+            .any(|b| combined_source.contains(&format!("{}(", b)));
+        if used {
+            for dep in &addon.cargo_deps {
+                if !custom_cargo_deps.contains(dep) {
+                    custom_cargo_deps.push(dep.clone());
+                }
+            }
+            if addon.rust_main_async && rust_code.contains("\npub fn main() {\n") {
+                let attr_prefix = addon
+                    .rust_main_attr
+                    .as_deref()
+                    .map(|a| format!("{}\n", a))
+                    .unwrap_or_default();
+                rust_code = rust_code.replace(
+                    "\npub fn main() {\n",
+                    &format!("\n{}pub async fn main() {{\n", attr_prefix),
+                );
+            }
+            if let Some(rfile) = &addon.rust_file {
+                if let Some(extra_rs) = capsule.virtual_files.get(rfile) {
+                    rust_code.push('\n');
+                    rust_code.push_str(extra_rs);
+                } else if let Ok(extra_rs) = std::fs::read_to_string(rfile) {
+                    rust_code.push('\n');
+                    rust_code.push_str(&extra_rs);
+                }
+            }
+        }
+    }
 
     let has_unwrap = rust_code.contains(".unwrap()") || rust_code.contains(".expect()");
     if has_unwrap {
@@ -161,11 +248,27 @@ pub fn build_rust_binary_from_capsule(
     let file_stem = capsule.project_name.replace('-', "_");
 
     let uses_serde = rust_code.contains("serde_json::");
-    let deps_section = if uses_serde {
-        "serde_json = \"1\"\nserde = { version = \"1\", features = [\"derive\"] }"
-    } else {
-        ""
-    };
+    let uses_tui = rust_code.contains("pub fn tui_dashboard(");
+    let uses_tokio = rust_code.contains("#[tokio::main]");
+
+    let mut deps_vec: Vec<String> = Vec::new();
+    if uses_serde || uses_tui {
+        deps_vec.push("serde_json = \"1\"".to_string());
+        deps_vec.push("serde = { version = \"1\", features = [\"derive\"] }".to_string());
+    }
+    if uses_tui {
+        deps_vec.push("ratatui = \"0.29\"".to_string());
+        deps_vec.push("crossterm = \"0.28\"".to_string());
+    }
+    if uses_tokio {
+        deps_vec.push("tokio = { version = \"1\", features = [\"full\"] }".to_string());
+    }
+    for cdep in custom_cargo_deps {
+        if !deps_vec.contains(&cdep) {
+            deps_vec.push(cdep);
+        }
+    }
+    let deps_section = deps_vec.join("\n");
 
     // Emit an empty [workspace] table so capsules initialized inside a parent Cargo workspace
     // (like a fresh clone of this repo) compile as standalone crates instead of failing workspace checks.
@@ -278,12 +381,27 @@ path = "src/main.rs"
                 }
             }
         }
-        let run_output = run_cmd
-            .output()
-            .map_err(|e| format!("Failed to execute compiled binary: {}", e))?;
-        run_exit_code = run_output.status.code();
-        run_stdout = Some(String::from_utf8_lossy(&run_output.stdout).to_string());
-        run_stderr = Some(String::from_utf8_lossy(&run_output.stderr).to_string());
+        if uses_tui
+            && std::io::IsTerminal::is_terminal(&std::io::stdout())
+            && std::env::var("PSUDO_TUI_HEADLESS").is_err()
+        {
+            let status = run_cmd
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status()
+                .map_err(|e| format!("Failed to execute compiled TUI binary: {}", e))?;
+            run_exit_code = status.code();
+            run_stdout = Some(String::new());
+            run_stderr = Some(String::new());
+        } else {
+            let run_output = run_cmd
+                .output()
+                .map_err(|e| format!("Failed to execute compiled binary: {}", e))?;
+            run_exit_code = run_output.status.code();
+            run_stdout = Some(String::from_utf8_lossy(&run_output.stdout).to_string());
+            run_stderr = Some(String::from_utf8_lossy(&run_output.stderr).to_string());
+        }
     }
 
     Ok(RustArtifactReport {
@@ -678,6 +796,323 @@ fn render_rust_expr(expr: &Expression) -> String {
         }
         _ => "PsudoVal::Null".to_string(),
     }
+}
+
+fn get_tui_rust_runtime() -> &'static str {
+    // Zero-unwrap Ratatui + Crossterm runtime with automatic TestBackend fallback
+    // when stdout is piped or PSUDO_TUI_HEADLESS=1 is set.
+    r#"
+pub fn tui_metric(label: PsudoVal, value: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("metric".to_string()));
+    m.insert("label".to_string(), label);
+    m.insert("value".to_string(), value);
+    PsudoVal::Map(m)
+}
+
+pub fn tui_gauge(label: PsudoVal, percent: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("gauge".to_string()));
+    m.insert("label".to_string(), label);
+    m.insert("percent".to_string(), percent);
+    PsudoVal::Map(m)
+}
+
+pub fn tui_sparkline(label: PsudoVal, data: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("sparkline".to_string()));
+    m.insert("label".to_string(), label);
+    m.insert("data".to_string(), data);
+    PsudoVal::Map(m)
+}
+
+pub fn tui_table(title: PsudoVal, rows: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("table".to_string()));
+    m.insert("title".to_string(), title);
+    m.insert("rows".to_string(), rows);
+    PsudoVal::Map(m)
+}
+
+pub fn tui_log(title: PsudoVal, lines: PsudoVal) -> PsudoVal {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("__tui".to_string(), PsudoVal::Str("log".to_string()));
+    m.insert("title".to_string(), title);
+    m.insert("lines".to_string(), lines);
+    PsudoVal::Map(m)
+}
+
+fn tui_load_kv_entries(source: &PsudoVal) -> Vec<(String, String)> {
+    let mut rows = Vec::new();
+    if let PsudoVal::Map(m) = source {
+        if let Some(PsudoVal::Str(store_name)) = m.get("store_name") {
+            let path = std::path::PathBuf::from(format!(".pseudo/state/{}.json", store_name));
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(map) = serde_json::from_str::<std::collections::BTreeMap<String, serde_json::Value>>(&content) {
+                    for (k, v) in map {
+                        rows.push((k, v.to_string().trim_matches('"').to_string()));
+                    }
+                    return rows;
+                }
+            }
+        }
+        for (k, v) in m {
+            if k != "__type" {
+                rows.push((k.clone(), format!("{}", v)));
+            }
+        }
+    }
+    rows
+}
+
+fn tui_render_headless(title: &str, lines: &[String]) {
+    use ratatui::backend::TestBackend;
+    use ratatui::widgets::{Block, Borders, Paragraph};
+    use ratatui::Terminal;
+    let backend = TestBackend::new(80, 24);
+    if let Ok(mut terminal) = Terminal::new(backend) {
+        let body = lines.join("\n");
+        let _ = terminal.draw(|f| {
+            let area = f.area();
+            let widget = Paragraph::new(body.as_str())
+                .block(Block::default().title(title).borders(Borders::ALL));
+            f.render_widget(widget, area);
+        });
+        let buf = terminal.backend().buffer();
+        for y in 0..buf.area.height {
+            let mut row = String::new();
+            for x in 0..buf.area.width {
+                if let Some(cell) = buf.cell((x, y)) {
+                    row.push_str(cell.symbol());
+                }
+            }
+            println!("{}", row.trim_end());
+        }
+    }
+}
+
+fn tui_run_interactive(title: &str, lines: &[String]) {
+    use crossterm::event::{self, Event, KeyCode};
+    use crossterm::execute;
+    use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+    use ratatui::backend::CrosstermBackend;
+    use ratatui::widgets::{Block, Borders, Paragraph};
+    use ratatui::Terminal;
+
+    if enable_raw_mode().is_err() {
+        tui_render_headless(title, lines);
+        return;
+    }
+    let mut stdout = std::io::stdout();
+    if execute!(stdout, EnterAlternateScreen).is_err() {
+        let _ = disable_raw_mode();
+        tui_render_headless(title, lines);
+        return;
+    }
+    let backend = CrosstermBackend::new(stdout);
+    if let Ok(mut terminal) = Terminal::new(backend) {
+        let mut scroll: u16 = 0;
+        loop {
+            let body = format!("{}\n\n[Up/Down] Scroll  [q/Esc] Quit", lines.join("\n"));
+            let _ = terminal.draw(|f| {
+                let area = f.area();
+                let widget = Paragraph::new(body.as_str())
+                    .scroll((scroll, 0))
+                    .block(Block::default().title(title).borders(Borders::ALL));
+                f.render_widget(widget, area);
+            });
+            if event::poll(std::time::Duration::from_millis(120)).unwrap_or(false) {
+                if let Ok(Event::Key(k)) = event::read() {
+                    match k.code {
+                        KeyCode::Char('q') | KeyCode::Esc => break,
+                        KeyCode::Down | KeyCode::Char('j') => scroll = scroll.saturating_add(1),
+                        KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    }
+    let _ = disable_raw_mode();
+}
+
+pub fn tui_dashboard(title: PsudoVal, source: PsudoVal) -> PsudoVal {
+    let t_str = format!("{}", title);
+    let mut lines: Vec<String> = Vec::new();
+    match &source {
+        PsudoVal::List(items) => {
+            for item in items {
+                if let PsudoVal::Map(m) = item {
+                    if let Some(PsudoVal::Str(kind)) = m.get("__tui") {
+                        match kind.as_str() {
+                            "metric" => {
+                                let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                                let val = m.get("value").map(|v| format!("{}", v)).unwrap_or_default();
+                                lines.push(format!("[{}] {}", lbl, val));
+                            }
+                            "gauge" => {
+                                let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                                let pct = match m.get("percent") {
+                                    Some(PsudoVal::Num(n)) => (*n).clamp(0.0, 100.0),
+                                    _ => 0.0,
+                                };
+                                let filled = ((pct / 100.0) * 20.0).round() as usize;
+                                let bar = format!("{}{}", "█".repeat(filled), "░".repeat(20usize.saturating_sub(filled)));
+                                lines.push(format!("{:<16} [{}] {:.0}%", lbl, bar, pct));
+                            }
+                            "sparkline" => {
+                                let lbl = m.get("label").map(|v| format!("{}", v)).unwrap_or_default();
+                                let bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+                                let mut spark = String::new();
+                                if let Some(PsudoVal::List(nums)) = m.get("data") {
+                                    let max_v = nums.iter().filter_map(|v| if let PsudoVal::Num(n) = v { Some(*n) } else { None }).fold(1.0f32, f32::max);
+                                    for v in nums {
+                                        if let PsudoVal::Num(n) = v {
+                                            let idx = (((*n / max_v) * 7.0).round() as usize).min(7);
+                                            spark.push(bars[idx]);
+                                        }
+                                    }
+                                }
+                                lines.push(format!("{:<16} {}", lbl, spark));
+                            }
+                            "table" => {
+                                let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
+                                lines.push(format!("-- {} --", sub));
+                                if let Some(PsudoVal::List(rows)) = m.get("rows") {
+                                    for r in rows {
+                                        lines.push(format!("  {}", r));
+                                    }
+                                }
+                            }
+                            "log" => {
+                                let sub = m.get("title").map(|v| format!("{}", v)).unwrap_or_default();
+                                lines.push(format!("-- {} --", sub));
+                                if let Some(PsudoVal::List(lns)) = m.get("lines") {
+                                    for l in lns {
+                                        lines.push(format!("  {}", l));
+                                    }
+                                }
+                            }
+                            _ => lines.push(format!("{}", item)),
+                        }
+                    } else {
+                        lines.push(format!("{}", item));
+                    }
+                } else {
+                    lines.push(format!("{}", item));
+                }
+            }
+        }
+        _ => {
+            for (k, v) in tui_load_kv_entries(&source) {
+                lines.push(format!("{:<24} : {}", k, v));
+            }
+        }
+    }
+    if lines.is_empty() {
+        lines.push("(no entries in store)".to_string());
+    }
+    if std::io::IsTerminal::is_terminal(&std::io::stdout())
+        && std::env::var("PSUDO_TUI_HEADLESS").is_err()
+    {
+        tui_run_interactive(&t_str, &lines);
+    } else {
+        tui_render_headless(&t_str, &lines);
+    }
+    PsudoVal::Bool(true)
+}
+
+pub fn tui_grid(title: PsudoVal, source: PsudoVal) -> PsudoVal {
+    let t_str = format!("{}", title);
+    let entries = tui_load_kv_entries(&source);
+    let w: usize = 36;
+    let h: usize = 12;
+    let mut grid = vec![vec![false; w]; h];
+    if let Ok(seed_raw) = std::fs::read_to_string(".pseudo/sandbox/life_seed.json") {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&seed_raw) {
+            if let Some(cells) = val.get("live_cells").and_then(|c| c.as_array()) {
+                for pair in cells {
+                    if let (Some(r), Some(c)) = (pair.get(0).and_then(|v| v.as_u64()), pair.get(1).and_then(|v| v.as_u64())) {
+                        let rr = (r as usize) % h;
+                        let cc = (c as usize) % w;
+                        grid[rr][cc] = true;
+                    }
+                }
+            }
+        }
+    }
+    let mut lines = Vec::new();
+    for (k, v) in entries {
+        lines.push(format!("{} = {}", k, v));
+    }
+    for row in &grid {
+        let row_str: String = row.iter().map(|&alive| if alive { '█' } else { '·' }).collect();
+        lines.push(row_str);
+    }
+    if std::io::IsTerminal::is_terminal(&std::io::stdout())
+        && std::env::var("PSUDO_TUI_HEADLESS").is_err()
+    {
+        tui_run_interactive(&t_str, &lines);
+    } else {
+        tui_render_headless(&t_str, &lines);
+    }
+    PsudoVal::Bool(true)
+}
+
+pub fn tui_fractal(title: PsudoVal, source: PsudoVal) -> PsudoVal {
+    let t_str = format!("{}", title);
+    let entries = tui_load_kv_entries(&source);
+    let mut cx = -0.5f64;
+    let mut cy = 0.0f64;
+    let mut zoom = 1.0f64;
+    let mut max_iter = 48usize;
+    for (k, v) in &entries {
+        match k.as_str() {
+            "center_x" => cx = v.parse().unwrap_or(-0.5),
+            "center_y" => cy = v.parse().unwrap_or(0.0),
+            "zoom" => zoom = v.parse::<f64>().unwrap_or(1.0).max(0.01),
+            "max_iter" => max_iter = v.parse::<f64>().unwrap_or(48.0).clamp(8.0, 256.0) as usize,
+            _ => {}
+        }
+    }
+    let palette: &[u8] = b" .:-=+*#%@";
+    let w = 64usize;
+    let h = 16usize;
+    let mut lines = vec![format!("center=({:.3}, {:.3}) zoom={:.2}x max_iter={}", cx, cy, zoom, max_iter)];
+    for py in 0..h {
+        let mut row = String::with_capacity(w);
+        let ci = cy + ((py as f64 / h as f64) - 0.5) * (2.4 / zoom);
+        for px in 0..w {
+            let cr = cx + ((px as f64 / w as f64) - 0.5) * (3.6 / zoom);
+            let mut zr = 0.0f64;
+            let mut zi = 0.0f64;
+            let mut iter = 0usize;
+            while zr * zr + zi * zi <= 4.0 && iter < max_iter {
+                let nzi = 2.0 * zr * zi + ci;
+                zr = zr * zr - zi * zi + cr;
+                zi = nzi;
+                iter += 1;
+            }
+            let ch_idx = if iter >= max_iter {
+                palette.len() - 1
+            } else {
+                (iter * (palette.len() - 1)) / max_iter
+            };
+            row.push(palette[ch_idx] as char);
+        }
+        lines.push(row);
+    }
+    if std::io::IsTerminal::is_terminal(&std::io::stdout())
+        && std::env::var("PSUDO_TUI_HEADLESS").is_err()
+    {
+        tui_run_interactive(&t_str, &lines);
+    } else {
+        tui_render_headless(&t_str, &lines);
+    }
+    PsudoVal::Bool(true)
+}
+"#
 }
 
 fn get_rust_preamble() -> &'static str {
@@ -1204,4 +1639,54 @@ fn json_to_psudoval(val: &serde_json::Value) -> PsudoVal {
     }
 }
  "#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transpile_tui_and_tokio_builtins_zero_unwrap() {
+        let src = r#"
+fn main()
+    let m = tui_metric("Net", 2035)
+    let g = tui_gauge("Budget", 86)
+    let _ = tokio_sleep_ms(10)
+    return tui_dashboard("Finance", [m, g])
+main()
+"#;
+        let rust = transpile_psudo_to_rust(src, true).expect("transpile should succeed");
+        assert!(rust.contains("#[tokio::main]\npub async fn main()"));
+        assert!(rust.contains("pub fn tui_dashboard("));
+        assert!(rust.contains("pub fn tokio_sleep_ms("));
+        assert!(!rust.contains(".unwrap()"));
+        assert!(!rust.contains(".expect()"));
+    }
+
+    #[test]
+    fn test_custom_addon_in_capsule_injects_deps_and_tokio_main() {
+        let mut capsule = crate::vfs::WorkspaceCapsule::new_empty("addon_test");
+        capsule.virtual_files.insert(
+            "psudo.toml".to_string(),
+            r##"
+[addons.my_worker]
+builtins = ["worker_ping"]
+cargo_deps = ['tokio = { version = "1", features = ["full"] }']
+rust_main_attr = "#[tokio::main]"
+rust_main_async = true
+rust_file = "src/worker_addon.rs"
+"##
+            .to_string(),
+        );
+        capsule.virtual_files.insert(
+            "src/worker_addon.rs".to_string(),
+            "pub fn worker_ping() -> PsudoVal { PsudoVal::Bool(true) }".to_string(),
+        );
+        let cfg = crate::config::parse_project_config_str(
+            capsule.virtual_files.get("psudo.toml").unwrap(),
+        );
+        let addon = cfg.addons.get("my_worker").unwrap();
+        assert!(addon.rust_main_async);
+        assert_eq!(addon.builtins, vec!["worker_ping"]);
+    }
 }

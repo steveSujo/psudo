@@ -122,6 +122,8 @@ pub struct DaemonSynthRequest {
     pub symbol: String,
     pub params: Vec<String>,
     pub directive: Option<String>,
+    #[serde(default)]
+    pub addon_builtins: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -408,6 +410,12 @@ fn try_synthesize_symbol(
                 symbol: sym.name.clone(),
                 params: param_names_vec,
                 directive: Some(directive.to_string()),
+                addon_builtins: vec![
+                    "tui_dashboard".to_string(),
+                    "tui_grid".to_string(),
+                    "tui_fractal".to_string(),
+                    "tokio_sleep_ms".to_string(),
+                ],
             };
             match post_daemon_synth(port, &synth_req) {
                 Ok(resp) => {

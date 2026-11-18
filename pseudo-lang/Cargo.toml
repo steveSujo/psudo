@@ -1,6 +1,6 @@
 [package]
 name = "psudo"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 
 [dependencies]
@@ -17,6 +17,8 @@ xxhash-rust = { version = "0.8", features = ["xxh64"] }
 fnv = "1.0"
 serde_yaml = "0.9"
 pathdiff = "0.2"
+ratatui = "0.29"
+crossterm = "0.28"
 
 [[test]]
 name = "integration_tests"

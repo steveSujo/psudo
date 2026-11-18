@@ -685,7 +685,22 @@ const SANDBOX_FS: &[&str] = &[
 const SANDBOX_KV: &[&str] = &["persistent_kv", "get", "set", "del"];
 const COLLECTION_MUT: &[&str] = &["push", "pop"];
 const COLLECTION_READ: &[&str] = &["len", "slice", "keys", "values", "has"];
-const RUNTIME_UTIL: &[&str] = &["str", "num", "bool", "clock", "print"];
+const RUNTIME_UTIL: &[&str] = &[
+    "str",
+    "num",
+    "bool",
+    "clock",
+    "print",
+    "tui_dashboard",
+    "tui_grid",
+    "tui_fractal",
+    "tui_metric",
+    "tui_gauge",
+    "tui_sparkline",
+    "tui_table",
+    "tui_log",
+    "tokio_sleep_ms",
+];
 
 fn classify_calls(text: &str, footprint: &mut PseudoFootprint) {
     let text = text.trim();

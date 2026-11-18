@@ -5,13 +5,36 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+/// Transpiler & daemon addon specification in `psudo.toml` (`[addons.<name>]`)
+// Keeping Rust-specific crate deps and attributes like `#[tokio::main]` inside `psudo.toml`
+// addon specs lets `.psudo` stay a simple toy language while still compiling rich Rust apps.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AddonSpec {
+    #[serde(default)]
+    pub builtins: Vec<String>,
+    #[serde(default)]
+    pub cargo_deps: Vec<String>,
+    #[serde(default)]
+    pub rust_main_attr: Option<String>,
+    #[serde(default)]
+    pub rust_main_async: bool,
+    #[serde(default)]
+    pub rust_file: Option<String>,
+    #[serde(default)]
+    pub daemon_hook: Option<String>,
+}
+
 /// Project configuration for psudo
 // Explicit size caps in psudo.toml keep synthesized code from accidentally filling disk
 // during unguarded sandbox loops.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectConfig {
     /// Sandbox configuration
+    #[serde(default)]
     pub sandbox: SandboxConfig,
+    /// Optional transpiler and daemon builtin-stub addons
+    #[serde(default)]
+    pub addons: std::collections::BTreeMap<String, AddonSpec>,
 }
 
 /// Sandbox configuration
@@ -160,4 +183,41 @@ pub fn is_external_read_allowed(config: &ProjectConfig, path: &Path) -> bool {
 /// Generate default psudo.toml content
 pub fn default_config_toml() -> String {
     toml::to_string_pretty(&ProjectConfig::default()).unwrap_or_default()
+}
+
+/// Parse a `psudo.toml` string into `ProjectConfig` (falling back to default on error)
+pub fn parse_project_config_str(toml_str: &str) -> ProjectConfig {
+    toml::from_str(toml_str).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_psudo_toml_with_custom_addons() {
+        let raw = r##"
+[sandbox]
+root = ".pseudo/sandbox"
+max_file_size = 2048
+
+[addons.tokio_worker]
+builtins = ["async_fetch", "async_Broadcast"]
+cargo_deps = ['tokio = { version = "1", features = ["full"] }']
+rust_main_attr = "#[tokio::main]"
+rust_main_async = true
+rust_file = ".pseudo/addons/tokio_worker.rs"
+daemon_hook = "async_fetch"
+"##;
+        let cfg = parse_project_config_str(raw);
+        assert_eq!(cfg.sandbox.max_file_size, 2048);
+        let addon = cfg.addons.get("tokio_worker").expect("tokio_worker addon");
+        assert_eq!(addon.builtins, vec!["async_fetch", "async_Broadcast"]);
+        assert_eq!(addon.rust_main_attr.as_deref(), Some("#[tokio::main]"));
+        assert!(addon.rust_main_async);
+        assert_eq!(
+            addon.rust_file.as_deref(),
+            Some(".pseudo/addons/tokio_worker.rs")
+        );
+    }
 }

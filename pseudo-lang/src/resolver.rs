@@ -109,11 +109,26 @@ impl Resolver {
             "persistent_kv",
             "get",
             "set",
+            "tui_dashboard",
+            "tui_grid",
+            "tui_fractal",
+            "tui_metric",
+            "tui_gauge",
+            "tui_sparkline",
+            "tui_table",
+            "tui_log",
+            "tokio_sleep_ms",
             "@stub",
         ];
+        let project_cfg = crate::config::load_project_config();
         if let Some(scope) = self.scopes.last_mut() {
             for b in builtins {
                 scope.insert(b.to_string(), ScopeInfo { initialized: true });
+            }
+            for addon in project_cfg.addons.values() {
+                for custom_b in &addon.builtins {
+                    scope.insert(custom_b.clone(), ScopeInfo { initialized: true });
+                }
             }
         }
 

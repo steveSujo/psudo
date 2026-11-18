@@ -176,3 +176,76 @@ fn test_ansi_color_gates_cleanly_on_non_tty() {
         "\x1b[1;32mok\x1b[0m"
     );
 }
+
+#[test]
+fn test_tui_builtins_and_tokio_sleep_pass_resolver_and_borrow_checker() {
+    let source = r#"
+fn main()
+    let m = tui_metric("Net", 2035)
+    let g = tui_gauge("Budget", 86)
+    let s = tui_sparkline("Trend", [10, 20, 30])
+    let t = tui_table("Rows", [m])
+    let l = tui_log("Logs", ["ok"])
+    let _ = tokio_sleep_ms(1)
+    return tui_dashboard("Finance", [m, g, s, t, l])
+"#;
+    let mut lexer = Lexer::new(source.to_string());
+    let tokens = lexer.scan_tokens().unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+    let res = psudo::resolver::Resolver::new().resolve(&statements);
+    assert!(res.errors.is_empty(), "Resolver errors: {:?}", res.errors);
+    run_checked_test(source);
+}
+
+#[test]
+fn test_all_three_tui_templates_parse_resolve_borrowcheck_and_transpile_zero_unwrap() {
+    let templates = [
+        (
+            include_str!("../../templates/tui_game_of_life.psudo"),
+            "pub fn tui_grid(",
+        ),
+        (
+            include_str!("../../templates/tui_fractal_zoom.psudo"),
+            "pub fn tui_fractal(",
+        ),
+        (
+            include_str!("../../templates/tui_personal_finance.psudo"),
+            "pub fn tui_dashboard(",
+        ),
+    ];
+    for (src, expected_fn) in templates {
+        let mut lexer = Lexer::new(src.to_string());
+        let tokens = lexer.scan_tokens().unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+        let res = psudo::resolver::Resolver::new().resolve(&statements);
+        assert!(res.errors.is_empty(), "Resolver errors: {:?}", res.errors);
+
+        let rust = psudo::codegen::transpile_psudo_to_rust(src, true).unwrap();
+        assert!(rust.contains(expected_fn), "Missing {}", expected_fn);
+        assert!(!rust.contains(".unwrap()"));
+        assert!(!rust.contains(".expect()"));
+    }
+}
+
+#[test]
+fn test_custom_addon_capsule_transpilation() {
+    let mut capsule = psudo::vfs::WorkspaceCapsule::new_empty("addon_it");
+    capsule.virtual_files.insert(
+        "psudo.toml".to_string(),
+        r##"
+[addons.my_worker]
+builtins = ["worker_ping"]
+cargo_deps = ['tokio = { version = "1", features = ["full"] }']
+rust_main_attr = "#[tokio::main]"
+rust_main_async = true
+rust_file = "src/worker_addon.rs"
+"##
+        .to_string(),
+    );
+    let cfg = psudo::config::parse_project_config_str(
+        capsule.virtual_files.get("psudo.toml").unwrap(),
+    );
+    assert!(cfg.addons.contains_key("my_worker"));
+}

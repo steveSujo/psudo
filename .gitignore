@@ -7,25 +7,10 @@
 *.pdb
 *.log
 .DS_Store
-node_modules/
 dist/
 build/
 
-__pycache__/
-*.py[cod]
-.pytest_cache/
-*.bak
-DEV_PLAN.md
-.vault-link
-/.pseudo/sandbox/
-/.pseudo/state/zettels.*
-/playground/**/.pseudo/
 /exercise/**/.pseudo/
 /examples/**/.pseudo/build/
 /examples/**/.pseudo/bin/
 /examples/**/.pseudo/state/
-/playground/**/.mcp.json
-/playground/**/CLI_OBSERVATIONS.md
-.axon/
-.agents/skills/axon-nav/
-.agents/skills/caveman/

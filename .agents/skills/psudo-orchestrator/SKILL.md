@@ -24,16 +24,16 @@ Keep stubs **atomic**. `.psudo` and `pIR` are token-compressed wire formats scop
 
 ### Step 1: Initialize or Inspect Capsule
 ```bash
-# New workspace (templates: blank, log, sensor, quota)
-psudo init <DIR> --template <blank|log|sensor|quota> --with-docs
+# New workspace (templates: blank, log, sensor, quota, life, fractal, finance)
+psudo init <DIR> --template <blank|log|sensor|quota|life|fractal|finance> --with-docs
 
 # Inspect behavioral contracts (YAML/JSON, no raw code leakage) and virtual files
 psudo contract <CAPSULE|FILE> [--json|--yaml] [--symbol <NAME>] [-o <FILE>]
 psudo vfs list <CAPSULE>
-psudo vfs show <CAPSULE> -h
+psudo vfs show <CAPSULE> [VPATH] -h
 ```
 - `psudo init <DIR> --template blank` creates a minimal `psudo.bin` without extra files.
-- Non-blank templates (`log`, `sensor`, `quota`) scaffold `.pseudo/sandbox/` fixtures alongside `psudo.bin`.
+- Non-blank templates (`log`, `sensor`, `quota`, `life`, `fractal`, `finance`) scaffold `.pseudo/sandbox/` fixtures alongside `psudo.bin`. Non-`.psudo` files like `psudo.toml` print directly with `psudo vfs show`.
 
 ### Step 2: Inspect Behavioral Contracts
 ```bash
@@ -68,9 +68,11 @@ Flags:
 
 If synthesis surfaces `<clarify>...</clarify>`, narrow the function signature or make the `--directive` more explicit before retrying.
 
-### Step 5: Wire Glue (When Needed) and Verify
-If you need to wire entrypoint glue, `test "..."` blocks, or virtual config files:
+### Step 5: Wire Glue, Declare Tests, and Verify
+Wire `main_task`, declare `test "..."` blocks, or update virtual config files:
 ```bash
+psudo vfs wire <CAPSULE> [--entry <FN>] [--call "<STMT>" ...] [--stdin] [--return "<EXPR>"]
+psudo vfs test <CAPSULE> <TEST_NAME> --call "<EXPR>" --expect "<VAL>" [--assert "<COND>"]
 psudo vfs write [<CAPSULE>] <VPATH> <FILE|->
 psudo vfs rm [<CAPSULE>] <VPATH>
 ```
@@ -80,15 +82,19 @@ psudo check <CAPSULE> -a -b [--json]
 ```
 - `-a`: audit all virtual modules.
 - `-b`: enable borrow checking.
+- Use `vfs wire --stdin` on Windows PowerShell to avoid shell quote stripping.
 
 ### Step 6: Test, Run, and Compile Native Binary
 ```bash
 psudo test <CAPSULE>
-psudo run <CAPSULE>
-psudo build <CAPSULE> [-o <DIR>] [--run]
+psudo run <CAPSULE> [--headless] [--call "<EXPR>"]
+psudo build <CAPSULE> [-o <DIR>] [--run] [--headless]
 ```
 - `psudo run` and `psudo build --run` resolve `.pseudo/sandbox/` relative to the capsule's workspace directory, regardless of caller CWD.
+- Pass `--headless` (or `PSUDO_TUI_HEADLESS=1`) for deterministic ASCII snapshots of `ratatui` widgets.
 - `psudo build` lowers verified `.psudo` to zero-`unwrap()` safe Rust and compiles a native binary.
+- Built-in TUI & async widgets: `tui_metric`, `tui_gauge`, `tui_sparkline`, `tui_table`, `tui_log`, `tui_canvas`, `tui_barchart`, `tui_row`, `tui_col`, `tui_dashboard`, `tui_render`, `tui_grid`, `tui_fractal`, `tokio_sleep_ms`.
+- Custom Rust addons live in `psudo.toml` (`[addons.<name>]`: `builtins`, `cargo_deps`, `rust_main_attr`, `rust_main_async`, `rust_file`, `mock_returns`; keep `.rs` files UTF-8 without BOM).
 
 ---
 

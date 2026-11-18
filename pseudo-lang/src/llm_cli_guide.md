@@ -21,24 +21,29 @@ When working with `psudo`, there is a strict division of labor between the **Out
 ---
 
 # 2. CLI Commands Reference
-- `psudo init <DIR> [--template blank|log|sensor|quota] [--with-docs]` -> Create new project workspace (`psudo.bin` + `.pseudo/sandbox/`).
+- `psudo init <DIR> [--template blank|log|sensor|quota|life|fractal|finance] [--with-docs]` -> Create new project workspace (`psudo.bin` + `.pseudo/sandbox/`).
 
 - `psudo contract <CAPSULE|FILE> [--json|--yaml] [--symbol <NAME>] [-o <FILE>]` -> Generate behavioral contracts from .pseudo source files or capsules (token-compressed, no code leakage; includes `params_used`, `branches`, `returns`).
-- `psudo vfs show <CAPSULE> -h` -> View function signatures and `@stub` directives in readable syntax. (Full `.psudo` printing via `--all` or `synth --print` requires `--reveal-code "<answer>"` to the CLI security question.)
+- `psudo vfs show <CAPSULE> [VPATH] -h` -> View function signatures and `@stub` directives in readable syntax (non-`.psudo` files like `psudo.toml` print directly). (Full `.psudo` printing via `--all` or `synth --print` requires `--reveal-code "<answer>"` to the CLI security question.)
 - `psudo vfs stub <CAPSULE> <FN> [PARAMS...] --directive "<TEXT>"` -> Add or update function stub in capsule.
 - `psudo vfs test [<CAPSULE>] <TEST_NAME> --call "<EXPR>" --expect "<VAL>" [--assert "<COND>"]` -> Declare or update `test "..."` block in capsule.
-- `psudo vfs wire [<CAPSULE>] [--entry <FN>] [--call "<STMT>" ...] [--return "<EXPR>"]` -> Wire entrypoint function (`main_task`) to call synthesized functions.
+- `psudo vfs wire [<CAPSULE>] [--entry <FN>] [--call "<STMT>" ...] [--stdin] [--return "<EXPR>"]` -> Wire entrypoint function (`main_task`) to call synthesized functions (use `--stdin` to avoid shell quote escaping).
 - `psudo vfs write [<CAPSULE>] <VPATH> <FILE|->` -> Write or update virtual file inside capsule.
 - `psudo vfs list <CAPSULE>` -> List virtual files inside capsule.
 - `psudo vfs rm [<CAPSULE>] <VPATH>` -> Remove virtual file from capsule.
 - `psudo synth <CAPSULE> [--write]` -> Synthesize stubs into working code. Use `--write` to save into capsule.
-- `psudo check <CAPSULE> [--all-modules]` -> Verify syntax, static types, borrow rules, and check all modules for unresolved stubs.
+- `psudo check <CAPSULE> [--all-modules] [-b]` -> Verify syntax, static types, borrow rules, and check all modules for unresolved stubs.
 - `psudo test <CAPSULE>` -> Run in-capsule tests (`test "..."` blocks).
-- `psudo run <CAPSULE> [--call "<EXPR>"]` -> Run script via interpreter (resolves `.pseudo/sandbox/` relative to capsule workspace) or invoke a single expression.
-- `psudo build <CAPSULE> --run` -> Compile to native binary and execute.
+- `psudo run <CAPSULE> [--headless] [--call "<EXPR>"]` -> Run script via interpreter (resolves `.pseudo/sandbox/` relative to capsule workspace) or invoke a single expression.
+- `psudo build <CAPSULE> --run [--headless]` -> Compile to native binary and execute (use `--headless` or `PSUDO_TUI_HEADLESS=1` for non-interactive ASCII snapshots).
 - `psudo benchmark <CAPSULE>` -> Profile compile time and runtime latency.
 - `psudo docs [-o <FILE>]` -> Emit CLI guide and domain glossary.
 - `psudo -s` -> Print compressed language syntax reference.
+
+## 2.1 TUI Builtins & `[addons.*]` Extensibility
+- **TUI Builtins (`ratatui` + `crossterm`):** `tui_metric(label, val)`, `tui_gauge(label, pct)`, `tui_sparkline(label, nums)`, `tui_table(title, rows)`, `tui_log(title, lines)`, `tui_canvas(title, matrix_2d)`, `tui_barchart(title, labels, values)`, `tui_row(widgets)`, `tui_col(widgets)`, `tui_dashboard(title, source)`, `tui_render(title, root)`, `tui_grid(title, source)`, `tui_fractal(title, source)`.
+- **Async Timing:** `tokio_sleep_ms(ms)` automatically lowers `fn main()` to `#[tokio::main] pub async fn main()`.
+- **Custom Addons (`psudo.toml`):** Declare `[addons.<name>]` with `builtins`, `cargo_deps`, `rust_main_attr`, `rust_main_async`, `rust_file`, and optional `mock_returns` (for interpreter runs). Keep addon `.rs` files UTF-8 without BOM.
 
 ---
 

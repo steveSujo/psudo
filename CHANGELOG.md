@@ -2,6 +2,21 @@
 
 All notable changes to `psudo` are documented in this file.
 
+## [0.11.0] - 2026-11-18
+
+### Added
+- Composable `ratatui` primitives (`tui_canvas`, `tui_barchart`, `tui_row`, `tui_col`, `tui_render`) and 2D list support in `tui_grid`.
+- `psudo vfs wire --stdin` for multi-statement wiring without shell quote escaping.
+- `psudo build --headless` and `psudo run --headless` flags, plus `-b` compatibility on `psudo check`.
+- Optional `[addons.<name>.mock_returns]` in `psudo.toml`, `PSUDO_CAPSULE_TOML` virtual config propagation, and shared `CARGO_TARGET_DIR` build caching across capsules.
+- Baseline `test "..."` blocks across `life`, `fractal`, and `finance` TUI templates.
+
+### Fixed
+- `let _ = expr` now lowers to `let _ = ...` instead of invalid `let mut _`.
+- Array literals clone variable identifiers so reused widgets never trigger `rustc E0382`.
+- Stripped UTF-8 BOM (`\u{feff}`) when splicing `addon.rust_file` sources and pre-checked static diagnostics before `cargo build`.
+- Renamed colliding local `let <var> =` bindings in `daemon.rs` `rebind_psudo_signature`, suppressed stray trailing `true` after TUI renders, trimmed `f32` precision noise, and formatted `tui_metric` / `tui_gauge` rows cleanly inside `tui_table`.
+
 ## [0.10.0] - 2026-11-18
 
 ### Added

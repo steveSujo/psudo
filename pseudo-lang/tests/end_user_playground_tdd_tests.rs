@@ -53,6 +53,18 @@ fn tdd_playground_workspaces_and_blackbox_doc_isolation() {
     assert!(status.success());
     assert!(invoice_dir.join("psudo.bin").exists());
 
+    let status = Command::new(psudo_bin)
+        .arg("vfs")
+        .arg("stub")
+        .arg(invoice_dir.join("psudo.bin"))
+        .arg("compute_fee")
+        .arg("amount")
+        .arg("--directive")
+        .arg("return amount * 2")
+        .status()
+        .expect("Failed to declare @stub");
+    assert!(status.success());
+
     let invoice_capsule = WorkspaceCapsule::load_from_file(&invoice_dir.join("psudo.bin")).unwrap();
     let invoice_source = invoice_capsule.get_file("src/main.psudo").unwrap();
     assert!(invoice_source.contains("@stub"));

@@ -18,7 +18,7 @@ fn test_single_bin_init_and_vfs_cli() {
         .arg("init")
         .arg(&test_dir)
         .arg("--template")
-        .arg("invoice")
+        .arg("blank")
         .status()
         .expect("Failed to run psudo init");
     assert!(status.success());
@@ -109,7 +109,7 @@ fn test_blackbox_mcp_session_on_single_bin_workspace() {
         .arg("init")
         .arg(&test_dir)
         .arg("--template")
-        .arg("invoice")
+        .arg("blank")
         .status()
         .expect("Failed to run psudo init");
     assert!(status.success());

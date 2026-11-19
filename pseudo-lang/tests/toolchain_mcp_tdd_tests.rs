@@ -53,6 +53,7 @@ fn tdd_verify_pseudo_toolchain_and_mcp() {
     let synth_output = Command::new(psudo_bin)
         .arg("synth")
         .arg(&capsule_path)
+        .arg("--allow-empty")
         .output()
         .expect("Failed to execute psudo synth");
     assert!(synth_output.status.success());

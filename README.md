@@ -84,7 +84,14 @@ cargo build --release
 
 This builds `./target/release/psudo` and `./target/release/pseudo-engine` (`.exe` on Windows).
 
-### 2. Run the Pre-Built Examples
+### 2. One-Command Live Showcase (`psudo demo`)
+See the full `@stub` -> grammar-masked `pIR` -> safe Rust -> native execution pipeline in one shot:
+
+```bash
+./target/release/psudo demo
+```
+
+### 3. Run the Pre-Built Examples
 `examples/` ships three workspace capsules (`psudo.bin`) with mock sandbox data in `.pseudo/sandbox/`:
 
 ```bash
@@ -107,28 +114,28 @@ Your code lives inside a single signed capsule file (`psudo.bin`). You (or an ou
 
 ```bash
 # 1. Initialize a workspace (templates: blank, log, sensor, quota)
-psudo init my-app --template blank --with-docs
+psudo init my-app --template blank --with-docs && cd my-app
 
-# 2. Declare an atomic @stub function
-psudo vfs stub my-app/psudo.bin compute_fee units rate free_tier \
+# 2. Declare an atomic @stub function (defaults to ./psudo.bin when omitted)
+psudo vfs stub compute_fee units rate free_tier \
   --directive "if units <= free_tier return 0, else return (units - free_tier) * rate"
 
-# 3. Synthesize with the local 100M model (auto-starts persistent --daemon)
-psudo synth my-app/psudo.bin --model ./pseudo-100m-tq2_0.gguf --write
+# 3. Synthesize with auto-discovered 100M GGUF (auto-starts persistent --daemon)
+psudo synth --write
 
 # 4. Inspect call-graph DAG and behavioral contract (without dumping raw code)
-psudo dag my-app/psudo.bin --format mermaid
-psudo contract my-app/psudo.bin
+psudo dag --format mermaid
+psudo contract
 
 # 5. Add an in-capsule test and wire the entrypoint
-psudo vfs test my-app/psudo.bin test_fee --call "compute_fee(15, 2, 10)" --expect "10"
-psudo vfs wire my-app/psudo.bin --entry main_task --call "print(compute_fee(15, 2, 10))" --return "0"
+psudo vfs test test_fee --call "compute_fee(15, 2, 10)" --expect "10"
+psudo vfs wire --entry main_task --call "print(compute_fee(15, 2, 10))" --return "0"
 
 # 6. Borrow-check, test, run directly, or compile to native Rust
-psudo check my-app/psudo.bin --all-modules
-psudo test my-app/psudo.bin
-psudo run my-app/psudo.bin --call "compute_fee(15, 2, 10)"
-psudo build my-app/psudo.bin --run
+psudo check -a
+psudo test
+psudo run --call "compute_fee(15, 2, 10)"
+psudo build --run
 ```
 
 ### Why raw `.psudo` is hidden behind a key

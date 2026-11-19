@@ -2,6 +2,8 @@
 
 A token-compressed DSL (`.psudo`), a Polish-prefix intermediate representation (`pIR`), a borrow-checked safe Rust transpiler, and a pure-Rust 2-bit ternary (`TQ2_0`) inference engine—built to run local code synthesis inside a **4 GB VRAM** budget.
 
+![psudo CLI demo](demo.gif)
+
 ```mermaid
 flowchart LR
     A[".psudo DSL"] --> B["pIR (Polish-prefix IR)"]

@@ -121,3 +121,49 @@ fn test_mutable_then_immutable_conflict_or_reassign() {
     let source = "let x = 10\nprint x\nx = 20\nprint x";
     run_checked_test(source);
 }
+
+#[test]
+fn test_self_teaching_hints_and_default_cwd_capsule_cli() {
+    use psudo::diagnostics::ErrorCode;
+    assert!(ErrorCode::E001UnrecognizedChar.help_message().contains("'//'"));
+    assert!(ErrorCode::E002IndentationError.help_message().contains("4-space"));
+
+    // Verify optional <CAPSULE> defaults to ./psudo.bin in `contract --json` and `build --run`
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let dir = std::env::temp_dir().join(format!("psudo_cwd_default_{}", millis));
+    let _ = std::fs::remove_dir_all(&dir);
+    let bin = env!("CARGO_BIN_EXE_psudo");
+
+    let init = std::process::Command::new(bin)
+        .args(["init", "."])
+        .current_dir({
+            std::fs::create_dir_all(&dir).unwrap();
+            &dir
+        })
+        .status()
+        .unwrap();
+    assert!(init.success());
+
+    let contract_out = std::process::Command::new(bin)
+        .args(["contract", "--json"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert!(
+        contract_out.status.success(),
+        "contract --json failed: {}",
+        String::from_utf8_lossy(&contract_out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&contract_out.stdout).contains("pseudo_ast_stub"));
+
+    let daemon_out = std::process::Command::new(bin)
+        .args(["daemon", "status"])
+        .output()
+        .unwrap();
+    assert!(daemon_out.status.success());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

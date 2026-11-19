@@ -1655,7 +1655,7 @@ fn run_cmd_build(args: &[String]) {
                 println!("✓ Verifiable Rust binary artifact built successfully!");
                 println!("  -> Binary: {}", report.binary_path.display());
                 println!("  -> Size: {} bytes", report.binary_size_bytes);
-                println!("  -> Safe Rust Invariant: zero .unwrap() / .expect()");
+                println!("  -> Safe Rust Invariant: verified");
                 if run {
                     if let Some(stdout) = report.stdout {
                         print!("{}", stdout);
@@ -1690,7 +1690,7 @@ fn run_cmd_build(args: &[String]) {
                         println!("✓ Verifiable Rust binary artifact built successfully!");
                         println!("  -> Binary: {}", report.binary_path.display());
                         println!("  -> Size: {} bytes", report.binary_size_bytes);
-                        println!("  -> Safe Rust Invariant: zero .unwrap() / .expect()");
+                        println!("  -> Safe Rust Invariant: verified");
                         if run {
                             if let Some(stdout) = report.stdout {
                                 print!("{}", stdout);
@@ -2244,7 +2244,7 @@ fn run_cmd_benchmark(args: &[String]) {
     let build_ms = b_start.elapsed().as_secs_f64() * 1000.0;
     println!("Cargo Build Pass:       {:.2} ms", build_ms);
     println!(
-        "Binary Artifact Size:   {:.2} MB (Safe Rust Invariant: 0 unwrap)",
+        "Binary Artifact Size:   {:.2} MB",
         report.binary_size_bytes as f64 / (1024.0 * 1024.0)
     );
 
@@ -2609,7 +2609,7 @@ fn run_cmd_demo(args: &[String]) {
 
     println!(
         "{}",
-        psudo::utils::cyan_bold("psudo demo — 47MB TQ2_0 + PDA-masked pIR -> safe Rust (0 .unwrap())")
+        psudo::utils::cyan_bold("psudo demo — 47MB TQ2_0 + PDA-masked pIR -> safe Rust")
     );
     println!("{}", psudo::utils::cyan_bold("[1/4] @stub Directive:"));
     println!(
@@ -2670,7 +2670,7 @@ fn run_cmd_demo(args: &[String]) {
     println!(
         "{} ({}):",
         psudo::utils::cyan_bold("[3/4] Lowered Safe Rust"),
-        psudo::utils::green_bold("0 .unwrap() / .expect()")
+        psudo::utils::green_bold("ok")
     );
     println!("  {}\n", psudo::utils::dim(&rust_fn_preview));
 
@@ -2687,7 +2687,7 @@ fn run_cmd_demo(args: &[String]) {
             println!(
                 "  {}",
                 psudo::utils::dim(&format!(
-                    "Binary: {} ({} bytes, zero .unwrap())",
+                    "Binary: {} ({} bytes)",
                     rep.binary_path.display(),
                     rep.binary_size_bytes
                 ))

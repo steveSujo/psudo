@@ -144,7 +144,7 @@ pub fn build_rust_binary_from_capsule(
         return Err("Transpiler emitted forbidden .unwrap() or .expect()".into());
     }
     println!(
-        "  -> Lowering to safe Rust (0 unwrap/expect)... {}",
+        "  -> Lowering to safe Rust... {}",
         crate::utils::green_bold("ok")
     );
     println!(

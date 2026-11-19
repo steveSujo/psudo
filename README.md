@@ -1,6 +1,6 @@
 # psudo
 
-`psudo` is a token-compressed domain-specific language (`.psudo`), a Polish-prefix intermediate representation (`pIR`), a safe Rust transpiler, and a pure-Rust 2-bit ternary (`TQ2_0`) inference engine.
+A token-compressed DSL (`.psudo`), a Polish-prefix intermediate representation (`pIR`), a borrow-checked safe Rust transpiler, and a pure-Rust 2-bit ternary (`TQ2_0`) inference engine—built to run local code synthesis inside a **4 GB VRAM** budget.
 
 ```mermaid
 flowchart LR
@@ -10,8 +10,6 @@ flowchart LR
     D --> E["Safe Rust (0 unwrap)"]
 ```
 
-### Numbers at a Glance
-
 | Metric | Value |
 | --- | --- |
 | Primary Model Footprint | `47.0 MB` (`100.7M` params, `TQ2_0` 2-bit ternary weights) |
@@ -19,6 +17,14 @@ flowchart LR
 | Syntax Error Rate | `0%` at decode time via Pushdown Automaton (`PirPdaConstraint`) masking |
 | Runtime Dependencies | Zero (pure Rust, `memmap2`, no CUDA/C++ toolchains required) |
 | Training Dataset | `~7,800` borrow-checked & sandbox-verified trajectories |
+
+Both quantized `.gguf` checkpoints (`47.0 MB` and `23.2 MB`) ship right in this repo, and everything compiles with plain `cargo` (zero C++, Python, or CUDA dependencies):
+
+```bash
+git clone https://github.com/steveSujo/psudo.git
+cd psudo
+cargo build --release && ./target/release/psudo demo
+```
 
 ---
 
@@ -31,7 +37,7 @@ My laptop has an **NVIDIA GTX 1660 Ti with 4 GB of VRAM** and limited RAM, so ru
 Running a small, limited model with **2-bit precision (`TQ2_0`)** shrinks the VRAM footprint enough to live comfortably alongside an IDE and compiler—and exploring how far that tiny model can push raw coding power became the whole point:
 
 1. **A tiny surface language (`.psudo`):** Python-indented, minimal punctuation, almost zero boilerplate tokens.
-2. **Lowering to safe Rust (`pseudo-transpiler`):** A toy language has no ecosystem. To build real binaries, verified and borrow-checked `.psudo` lowers into safe Rust (zero `.unwrap()` or `.expect()`) and compiles with `cargo`.
+2. **Lowering to safe Rust (`pseudo-transpiler`):** A toy language has no ecosystem. To build real binaries, verified and borrow-checked `.psudo` lowers into safe Rust (`0` `.unwrap()` or `.expect()` calls) and compiles with `cargo`.
 3. **The Cactus & Needle spark:** Seeing [Cactus](https://github.com/cactus-compute/cactus) and [Needle](https://huggingface.co/Cactus-Compute/needle3)—2-bit on-device models (`29M–121M` params in `8–29 MB`) beating much larger models on constrained tool calls—showed what tight constraints can do.
 4. **"What if?":** *What if I trained a ~100M 2-bit ternary model (`TQ2_0`) whose only job is writing atomic `.psudo` function bodies locally, while I (or a frontier LLM) stay at the orchestrator level?*
 
@@ -60,39 +66,28 @@ f clamp_val (val lo hi) [
 
 That trade buys two things:
 - **45–60% fewer tokens** per function body.
-- **Zero syntax errors at decode time:** `pseudo-engine` runs a pushdown automaton (`PirPdaConstraint`) over the `8,192`-token BPE vocab and masks out invalid tokens *before* sampling.
+- **0% syntax errors at decode time:** `pseudo-engine` runs a pushdown automaton (`PirPdaConstraint`) over the `8,192`-token BPE vocab and masks out invalid tokens *before* sampling.
 
-### Models
+### Models (Included in Repo)
 
 - **`pseudo-100m-tq2_0.gguf` (`100.7M` params, `47.0 MB`) — Primary:**
-  `d_model = 768`, `14` layers, `12` heads (`4` KV heads), `FFN = 2048`, `vocab = 8,192`, `max_seq_len = 512`, `TQ2_0` ternary weights (`{-1, 0, 1}`). Built for ~15-line atomic stubs (guards, math, loops, JSON/KV helpers).
+  `d_model = 768`, `14` layers, `12` heads (`4` KV heads), `FFN = 2048`, `vocab = 8,192`, `max_seq_len = 512`, `TQ2_0` ternary weights (`{-1, 0, 1}`). Auto-discovered by `psudo synth` for ~15-line atomic stubs (guards, math, loops, JSON/KV helpers).
 - **`pseudo-33m-tq2_0.gguf` (`33.6M` params, `23.2 MB`) — Embedded Fallback:**
-  `d_model = 512`, `8` layers, `8` heads (`4` KV heads). Baked into the `psudo` binary for smoke tests out of the box; use the `100M` checkpoint for real synthesis.
+  `d_model = 512`, `8` layers, `8` heads (`4` KV heads). Baked into the `psudo` binary for offline smoke tests if no external `.gguf` is present.
 
 Both were distilled from [`Qwen/Qwen2.5-Coder-7B-Instruct-AWQ`](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-AWQ) plus a synthetic generator—every sample had to pass type checking, borrow checking, and sandbox execution in headless `psudo` before being compiled to canonical `pIR` (`~7,800` verified trajectories across `<pir>`, `<error>` 1-shot auto-heal, `<zettel>`, and `<clarify>`).
 
 ---
 
-## Quickstart
+## Try the Examples
 
-### 1. Build (Pure Rust, no C/C++ or CUDA needed)
-Requires Rust `1.75+`. `pseudo-engine` uses integer/ternary math and `memmap2`, and embeds `tokenizer.json` at compile time.
+Requires Rust `1.75+`. Build both binaries (`psudo` and `pseudo-engine`):
 
 ```bash
 cargo build --release
 ```
 
-This builds `./target/release/psudo` and `./target/release/pseudo-engine` (`.exe` on Windows).
-
-### 2. One-Command Live Showcase (`psudo demo`)
-See the full `@stub` -> grammar-masked `pIR` -> safe Rust -> native execution pipeline in one shot:
-
-```bash
-./target/release/psudo demo
-```
-
-### 3. Run the Pre-Built Examples
-`examples/` ships three workspace capsules (`psudo.bin`) with mock sandbox data in `.pseudo/sandbox/`:
+`examples/` ships three pre-built workspace capsules (`psudo.bin`) with mock sandbox data in `.pseudo/sandbox/`:
 
 ```bash
 # 1. JSON Server Log Incident Filter

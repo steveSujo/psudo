@@ -101,18 +101,20 @@ pub fn resolve_model_path(explicit: Option<&Path>) -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let mut candidates = vec![
+    // Search 100M GGUF locations before 33M/embedded fallbacks so cloning from repo root works out of the box.
+    let mut candidates_100m = vec![
         PathBuf::from("pseudo-100m-tq2_0.gguf"),
+        PathBuf::from("../pseudo-100m-tq2_0.gguf"),
+        PathBuf::from("../../pseudo-100m-tq2_0.gguf"),
+    ];
+    let mut candidates_33m = vec![
         PathBuf::from("pseudo-33m-tq2_0.gguf"),
         PathBuf::from("pseudo-lang/models/pseudo-33m-tq2_0.gguf"),
         PathBuf::from("../pseudo-lang/models/pseudo-33m-tq2_0.gguf"),
-        PathBuf::from("../pseudo-100m-tq2_0.gguf"),
         PathBuf::from("../pseudo-33m-tq2_0.gguf"),
-        PathBuf::from("../../pseudo-100m-tq2_0.gguf"),
         PathBuf::from("../../pseudo-33m-tq2_0.gguf"),
         PathBuf::from(".pseudo/state/models/pseudo-33m-tq2_0.gguf"),
         PathBuf::from(".pseudo/state/checkpoints/pseudo-33m-tq2_0.gguf"),
-        // Legacy 3.2b aliases for backwards compatibility
         PathBuf::from("pseudo-3.2b-tq2_0.gguf"),
         PathBuf::from("../pseudo-3.2b-tq2_0.gguf"),
         PathBuf::from("../../pseudo-3.2b-tq2_0.gguf"),
@@ -121,24 +123,30 @@ pub fn resolve_model_path(explicit: Option<&Path>) -> Option<PathBuf> {
     ];
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
-            candidates.push(parent.join("pseudo-100m-tq2_0.gguf"));
-            candidates.push(parent.join("pseudo-33m-tq2_0.gguf"));
-            candidates.push(parent.join("models/pseudo-33m-tq2_0.gguf"));
-            candidates.push(parent.join("../models/pseudo-33m-tq2_0.gguf"));
-            candidates.push(parent.join("../../pseudo-100m-tq2_0.gguf"));
-            candidates.push(parent.join("../../pseudo-33m-tq2_0.gguf"));
-            candidates.push(parent.join("../../../pseudo-lang/models/pseudo-33m-tq2_0.gguf"));
-            candidates.push(parent.join("../../../pseudo-33m-tq2_0.gguf"));
-            candidates.push(parent.join("../../../../pseudo-33m-tq2_0.gguf"));
-            candidates.push(parent.join("pseudo-3.2b-tq2_0.gguf"));
-            candidates.push(parent.join("../../../pseudo-3.2b-tq2_0.gguf"));
-            candidates.push(parent.join("../../../../pseudo-3.2b-tq2_0.gguf"));
+            candidates_100m.push(parent.join("pseudo-100m-tq2_0.gguf"));
+            candidates_100m.push(parent.join("../../pseudo-100m-tq2_0.gguf"));
+            candidates_100m.push(parent.join("../../../pseudo-100m-tq2_0.gguf"));
+
+            candidates_33m.push(parent.join("pseudo-33m-tq2_0.gguf"));
+            candidates_33m.push(parent.join("models/pseudo-33m-tq2_0.gguf"));
+            candidates_33m.push(parent.join("../models/pseudo-33m-tq2_0.gguf"));
+            candidates_33m.push(parent.join("../../pseudo-33m-tq2_0.gguf"));
+            candidates_33m.push(parent.join("../../../pseudo-lang/models/pseudo-33m-tq2_0.gguf"));
+            candidates_33m.push(parent.join("../../../pseudo-33m-tq2_0.gguf"));
+            candidates_33m.push(parent.join("../../../../pseudo-33m-tq2_0.gguf"));
+            candidates_33m.push(parent.join("pseudo-3.2b-tq2_0.gguf"));
+            candidates_33m.push(parent.join("../../../pseudo-3.2b-tq2_0.gguf"));
+            candidates_33m.push(parent.join("../../../../pseudo-3.2b-tq2_0.gguf"));
         }
     }
-    if let Some(existing) = candidates.into_iter().find(|p| p.exists()) {
-        return Some(existing);
+    if let Some(existing_100m) = candidates_100m.into_iter().find(|p| p.exists()) {
+        return Some(existing_100m);
+    }
+    if let Some(existing_33m) = candidates_33m.into_iter().find(|p| p.exists()) {
+        return Some(existing_33m);
     }
 
+    eprintln!("[model] Using embedded 33.6M fallback (100M GGUF not found in CWD or repo root)");
     // Auto-extract embedded model to .pseudo/state/models/pseudo-33m-tq2_0.gguf
     crate::embedded_model::ensure_embedded_model_extracted().ok()
 }
@@ -150,33 +158,40 @@ pub fn find_engine_binary() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let exe = if cfg!(windows) {
-        "pseudo-engine.exe"
-    } else {
-        "pseudo-engine"
-    };
+    let exe = format!("pseudo-engine{}", std::env::consts::EXE_SUFFIX);
     let mut candidates = Vec::new();
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
-            candidates.push(parent.join(exe));
-            candidates.push(parent.join("../release").join(exe));
-            candidates.push(parent.join("../debug").join(exe));
-            candidates.push(parent.join("../pseudo-engine/target/release").join(exe));
+            candidates.push(parent.join(&exe));
+            candidates.push(parent.join("../release").join(&exe));
+            candidates.push(parent.join("../debug").join(&exe));
+            candidates.push(parent.join("../pseudo-engine/target/release").join(&exe));
             candidates.push(
                 parent
                     .join("../../../pseudo-engine/target/release")
-                    .join(exe),
+                    .join(&exe),
             );
         }
     }
     candidates.extend([
-        PathBuf::from("target/release").join(exe),
-        PathBuf::from("target/debug").join(exe),
-        PathBuf::from("pseudo-engine/target/release").join(exe),
-        PathBuf::from("../pseudo-engine/target/release").join(exe),
-        PathBuf::from("../../target/release").join(exe),
+        PathBuf::from("target/release").join(&exe),
+        PathBuf::from("target/debug").join(&exe),
+        PathBuf::from("pseudo-engine/target/release").join(&exe),
+        PathBuf::from("../pseudo-engine/target/release").join(&exe),
+        PathBuf::from("../../target/release").join(&exe),
     ]);
-    candidates.into_iter().find(|p| p.exists())
+    if let Some(found) = candidates.into_iter().find(|p| p.exists()) {
+        return Some(found);
+    }
+    if let Some(path_env) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_env) {
+            let p = dir.join(&exe);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    None
 }
 
 pub fn default_subprocess_gguf_handler(req: &McpGgufRequest) -> Result<McpGgufResponse, String> {

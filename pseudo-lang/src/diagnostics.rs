@@ -26,10 +26,10 @@ impl ErrorCode {
     pub fn help_message(&self) -> &'static str {
         match self {
             ErrorCode::E001UnrecognizedChar => {
-                "Pseudo uses '//' for single-line comments and '/* ... */' for block comments."
+                "psudo uses '//' for comments, not '#' (keeps '#' free for IR/directives)."
             }
             ErrorCode::E002IndentationError => {
-                "Pseudo uses consistent 4-space Python-style indentation for blocks."
+                "psudo requires strict 4-space indentation (no tabs or 2-space indents)."
             }
             ErrorCode::E003UnclosedString => {
                 "Ensure string literals are terminated with closing quotes."

@@ -128,7 +128,49 @@ pub struct DaemonSynthRequest {
 pub struct DaemonSynthResponse {
     pub symbol: String,
     pub psudo: String,
+    #[serde(default)]
+    pub pir: String,
     pub decode_tps: f32,
+}
+
+pub fn daemon_port() -> u16 {
+    std::env::var("PSUDO_DAEMON_PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(11434)
+}
+
+pub fn stop_daemon(port: u16) -> Result<bool, String> {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+
+    let addr: SocketAddr = format!("127.0.0.1:{}", port)
+        .parse()
+        .map_err(|e| format!("Invalid daemon address: {}", e))?;
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(500)) {
+        Ok(s) => s,
+        Err(_) => return Ok(false),
+    };
+    let req = format!(
+        "POST /shutdown HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        port
+    );
+    let _ = stream.write_all(req.as_bytes());
+    let mut resp = Vec::new();
+    let _ = stream.read_to_end(&mut resp);
+    let _ = std::fs::remove_file(".pseudo/state/daemon.mtime");
+    Ok(true)
+}
+
+fn binary_mtime_secs(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
 }
 
 pub fn get_daemon_health(port: u16) -> Result<DaemonHealthResponse, String> {
@@ -166,13 +208,39 @@ pub fn get_daemon_health(port: u16) -> Result<DaemonHealthResponse, String> {
 // Cold-loading the GGUF model on every @stub kills throughput; keeping a local HTTP daemon
 // up lets me keep the weights mmap'd across calls so iterative synthesis stays snappy.
 pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, String> {
-    let port = std::env::var("PSUDO_DAEMON_PORT")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(11434);
+    let port = daemon_port();
 
+    let engine_bin = match find_engine_binary() {
+        Some(b) if b.exists() => b,
+        Some(b) => {
+            return Err(format!(
+                "Internal error: 'pseudo-engine' binary at '{}' does not exist. Run 'cargo build --release' in the repository root.",
+                b.display()
+            ));
+        }
+        None => {
+            return Err(
+                "Internal error: 'pseudo-engine' binary not found. Run 'cargo build --release' in the repository root (or 'cargo build --release -p pseudo-engine')."
+                    .to_string(),
+            );
+        }
+    };
+
+    let current_mtime = binary_mtime_secs(&engine_bin).unwrap_or(0);
+    let mtime_file = std::path::Path::new(".pseudo/state/daemon.mtime");
     if get_daemon_health(port).is_ok() {
-        return Ok(port);
+        let recorded_mtime = std::fs::read_to_string(mtime_file)
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(current_mtime);
+        // Restart stale background daemons automatically after `cargo build` updates `pseudo-engine`.
+        if current_mtime > recorded_mtime {
+            eprintln!("[daemon] Newer pseudo-engine binary detected; restarting daemon...");
+            let _ = stop_daemon(port);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        } else {
+            return Ok(port);
+        }
     }
 
     let resolved_model = model_override
@@ -190,22 +258,6 @@ pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, Strin
         None => {
             return Err(
                 "Internal error: GGUF model 'pseudo-33m-tq2_0.gguf' is not loaded. Ensure model exists or set PSUDO_MODEL_PATH."
-                    .to_string(),
-            );
-        }
-    };
-
-    let engine_bin = match find_engine_binary() {
-        Some(b) if b.exists() => b,
-        Some(b) => {
-            return Err(format!(
-                "Internal error: 'pseudo-engine' binary at '{}' does not exist. Run 'cargo build --release' in the repository root.",
-                b.display()
-            ));
-        }
-        None => {
-            return Err(
-                "Internal error: 'pseudo-engine' binary not found. Run 'cargo build --release' in the repository root (or 'cargo build --release -p pseudo-engine')."
                     .to_string(),
             );
         }
@@ -230,6 +282,7 @@ pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, Strin
         .stderr(std::process::Stdio::from(log_file_stderr))
         .spawn()
         .map_err(|e| format!("Internal error: Failed to spawn daemon: {}", e))?;
+    let child_pid = child.id();
 
     for _ in 0..50 {
         if let Ok(Some(status)) = child.try_wait() {
@@ -241,6 +294,11 @@ pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, Strin
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
         if get_daemon_health(port).is_ok() {
+            let _ = std::fs::write(mtime_file, current_mtime.to_string());
+            eprintln!(
+                "[daemon] Started background pseudo-engine (PID {}). Stop anytime with 'psudo daemon stop'.",
+                child_pid
+            );
             return Ok(port);
         }
     }

@@ -107,6 +107,14 @@ fn main() {
             run_cmd_docs(&args[2..]);
             return;
         }
+        "demo" => {
+            run_cmd_demo(&args[2..]);
+            return;
+        }
+        "daemon" => {
+            run_cmd_daemon(&args[2..]);
+            return;
+        }
         _ => {}
     }
 
@@ -225,6 +233,8 @@ CRITICAL INSTRUCTIONS FOR AI CODING ASSISTANTS:
 
 Toolchain Subcommands:
   init [DIR] Initialize single-binary virtual workspace capsule (psudo.bin)
+  demo [--model <PATH>]                  One-command live showcase (Directive -> pIR -> Safe Rust -> Run)
+  daemon <status|stop>                   Inspect or stop the background pseudo-engine daemon
   vfs <list|show|stub|test|wire|merge|rm> Manage virtual files, stubs, tests & wiring inside psudo.bin
 
   contract <CAPSULE|FILE> [--json] [--yaml] [--symbol <NAME>]  Generate behavioral contracts from .pseudo source files or capsules
@@ -609,7 +619,7 @@ fn run_cmd_vfs(args: &[String]) {
                                         && !is_valid_reveal_key(reveal_key.as_deref())
                                     {
                                         println!(
-                                            "; [Code reveal locked -- Security question: \"What jumped over the lazy dog?\" Pass --reveal-code \"<answer>\" to inspect full implementation]"
+                                            "; [Code reveal locked] hint: raw .psudo source is gated so LLM orchestrators use 'psudo synth' and 'psudo contract'. Pass --reveal-code \"the slow pink elephant\" to inspect."
                                         );
                                         if let Ok(stubs) = cap.extract_stubs(&vpath) {
                                             if human {
@@ -1568,7 +1578,7 @@ fn run_cmd_synth(args: &[String]) {
                                     println!("--- {} ---\n{}\n---", res.symbol, res.synthesized_psudo);
                                 } else {
                                     println!(
-                                        "; [Code print locked -- Security question: \"What jumped over the lazy dog?\" Pass --reveal-code \"<answer>\" with --print to inspect synthesized .psudo]"
+                                        "; [Code print locked] hint: raw .psudo source is gated so LLM orchestrators use 'psudo synth' and 'psudo contract'. Pass --reveal-code \"the slow pink elephant\" with --print to inspect."
                                     );
                                 }
                             }
@@ -1604,16 +1614,17 @@ fn run_cmd_synth(args: &[String]) {
 
 fn run_cmd_build(args: &[String]) {
     if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        println!("Usage: psudo build <CAPSULE|FILE> [-o <DIR>] [--release] [--run]");
+        println!("Usage: psudo build [<CAPSULE|FILE>] [-o <DIR>] [--release] [--run]");
         println!("Compile verified .psudo capsule or file to a zero-unwrap native Rust binary.");
         return;
     }
-    let target = args.first().map(|s| s.as_str()).unwrap_or(".");
+    let mut target = ".".to_string();
+    let mut target_set = false;
     let mut custom_out_dir: Option<PathBuf> = None;
     let mut release = false;
     let mut run = false;
 
-    let mut i = 1;
+    let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "-o" => {
@@ -1624,10 +1635,15 @@ fn run_cmd_build(args: &[String]) {
             }
             "--release" => release = true,
             "--run" => run = true,
+            arg if !arg.starts_with('-') && !target_set => {
+                target = arg.to_string();
+                target_set = true;
+            }
             _ => {}
         }
         i += 1;
     }
+    let target = target.as_str();
 
     if target.ends_with(".psudo") && Path::new(target).exists() {
         let p = Path::new(target);
@@ -2435,12 +2451,13 @@ Examples:
         return;
     }
 
-    let target = args.first().map(|s| s.as_str()).unwrap_or(".");
+    let mut target = ".".to_string();
+    let mut target_set = false;
     let mut as_json = false;
     let mut symbol_filter = None;
     let mut out_path: Option<PathBuf> = None;
 
-    let mut i = 1;
+    let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--json" => {
@@ -2459,10 +2476,15 @@ Examples:
                     out_path = Some(PathBuf::from(&args[i]));
                 }
             }
+            arg if !arg.starts_with('-') && !target_set => {
+                target = arg.to_string();
+                target_set = true;
+            }
             _ => {}
         }
         i += 1;
     }
+    let target = target.as_str();
 
     // Check if it's a file or capsule
     let is_capsule = target.ends_with(".bin") || std::path::Path::new(target).is_dir();
@@ -2520,4 +2542,137 @@ Examples:
     } else {
         println!("{}", rendered);
     }
+}
+
+fn run_cmd_daemon(args: &[String]) {
+    if args.is_empty() || args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+        println!("Usage: psudo daemon <status|stop>");
+        println!("Inspect or stop the background pseudo-engine daemon.");
+        return;
+    }
+    let port = psudo::blackbox::daemon_port();
+    match args[0].as_str() {
+        "status" => match psudo::blackbox::get_daemon_health(port) {
+            Ok(h) => {
+                println!("✓ Daemon running on 127.0.0.1:{}", port);
+                println!("  -> Status:         {}", h.status);
+                println!("  -> Model:          {}", h.model);
+                println!("  -> Idle remaining: {}s", h.idle_remaining_s);
+            }
+            Err(_) => {
+                println!("Daemon stopped (not listening on 127.0.0.1:{})", port);
+            }
+        },
+        "stop" => match psudo::blackbox::stop_daemon(port) {
+            Ok(true) => println!("✓ Stopped background pseudo-engine daemon on port {}", port),
+            Ok(false) => println!("Daemon is not running on port {}", port),
+            Err(e) => {
+                eprintln!("Error stopping daemon: {}", e);
+                process::exit(1);
+            }
+        },
+        other => {
+            eprintln!("Unknown daemon subcommand '{}'. Valid: status, stop", other);
+            process::exit(1);
+        }
+    }
+}
+
+fn run_cmd_demo(args: &[String]) {
+    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+        println!("Usage: psudo demo [--model <PATH>]");
+        println!("Run a zero-setup live showcase: Directive -> pIR -> Safe Rust -> Native Execution.");
+        return;
+    }
+    let mut model_path: Option<PathBuf> = None;
+    let mut i = 0;
+    while i < args.len() {
+        if (args[i] == "--model" || args[i] == "-m") && i + 1 < args.len() {
+            model_path = Some(PathBuf::from(&args[i + 1]));
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+
+    let demo_dir = std::env::temp_dir().join("psudo_live_demo");
+    let _ = fs::remove_dir_all(&demo_dir);
+    let _ = fs::create_dir_all(&demo_dir);
+
+    let directive = "if val < lo return lo, if val > hi return hi, else return val";
+    let mut cap = WorkspaceCapsule::new_empty("psudo_live_demo");
+    let starter = "fn clamp_val(val, lo, hi)\n    @stub(\"if val < lo return lo, if val > hi return hi, else return val\")\n\nfn main()\n    let res = clamp_val(150, 0, 100)\n    print(\"clamp_val(150, 0, 100) = \" + str(res))\n    return res\n\nmain()\n";
+    if let Err(e) = cap.set_file("src/main.psudo", starter.to_string()) {
+        eprintln!("Demo init failed: {}", e);
+        process::exit(1);
+    }
+
+    println!("=== psudo live demo ===");
+    println!("[1/3] @stub Directive:");
+    println!("  fn clamp_val(val, lo, hi)");
+    println!("      @stub(\"{}\")\n", directive);
+
+    let port = match psudo::blackbox::ensure_daemon_running(model_path.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Demo daemon startup failed: {}", e);
+            process::exit(1);
+        }
+    };
+    let req = psudo::blackbox::DaemonSynthRequest {
+        symbol: "clamp_val".to_string(),
+        params: vec!["val".into(), "lo".into(), "hi".into()],
+        directive: Some(directive.to_string()),
+    };
+    let synth_resp = match psudo::blackbox::post_daemon_synth(port, &req) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Demo synthesis failed: {}", e);
+            process::exit(1);
+        }
+    };
+
+    println!(
+        "[2/3] Grammar-Masked pIR & Decompiled .psudo ({:.1} tok/s):",
+        synth_resp.decode_tps
+    );
+    if !synth_resp.pir.is_empty() {
+        println!("  pIR: {}", synth_resp.pir.replace('\n', "\n       "));
+    }
+    println!("  .psudo:\n  {}\n", synth_resp.psudo.replace('\n', "\n  "));
+
+    let full_src = format!(
+        "{}\n\nfn main()\n    let res = clamp_val(150, 0, 100)\n    print(\"clamp_val(150, 0, 100) = \" + str(res))\n    return res\n\nmain()\n",
+        synth_resp.psudo
+    );
+    let _ = cap.set_file("src/main.psudo", full_src.clone());
+    let rust_src = transpile_psudo_to_rust(&full_src, false).unwrap_or_default();
+    let rust_fn_preview: String = rust_src
+        .lines()
+        .skip_while(|l| !l.starts_with("pub fn clamp_val"))
+        .take(12)
+        .collect::<Vec<_>>()
+        .join("\n  ");
+
+    println!("[3/3] Lowered Safe Rust (0 .unwrap() / .expect()) & Execution:");
+    println!("  {}\n", rust_fn_preview);
+
+    let out_dir = demo_dir.join(".pseudo").join("build");
+    match build_rust_binary_from_capsule(&cap, &out_dir, false, true) {
+        Ok(rep) => {
+            if let Some(stdout) = rep.stdout {
+                println!("  Output: {}", stdout.trim());
+            }
+            println!(
+                "  Binary: {} ({} bytes, zero .unwrap())",
+                rep.binary_path.display(),
+                rep.binary_size_bytes
+            );
+        }
+        Err(e) => {
+            eprintln!("Demo build failed: {}", e);
+            process::exit(1);
+        }
+    }
+    let _ = fs::remove_dir_all(&demo_dir);
 }

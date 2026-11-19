@@ -167,11 +167,15 @@ pub fn build_rust_binary_from_capsule(
         ""
     };
 
+    // Emit an empty [workspace] table so capsules initialized inside a parent Cargo workspace
+    // (like a fresh clone of this repo) compile as standalone crates instead of failing workspace checks.
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
 version = "0.1.0"
 edition = "2021"
+
+[workspace]
 
 [dependencies]
 {}

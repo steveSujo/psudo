@@ -278,6 +278,8 @@ pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, Strin
         .arg(&model)
         .arg("--port")
         .arg(port.to_string())
+        // Detach stdin so PTY recorders (asciinema/vhs) don't wait on daemon EOF.
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::from(log_file))
         .stderr(std::process::Stdio::from(log_file_stderr))
         .spawn()

@@ -136,16 +136,19 @@ pub fn build_rust_binary_from_capsule(
         }
     }
 
-    println!("[1/3] Borrow-checking capsule... ok");
+    println!("  -> Borrow-checking capsule... {}", crate::utils::green_bold("ok"));
     let rust_code = transpile_psudo_to_rust(&combined_source, true)?;
 
     let has_unwrap = rust_code.contains(".unwrap()") || rust_code.contains(".expect()");
     if has_unwrap {
         return Err("Transpiler emitted forbidden .unwrap() or .expect()".into());
     }
-    println!("[2/3] Lowering to safe Rust (0 unwrap/expect)... ok");
     println!(
-        "[3/3] Compiling{} via cargo...",
+        "  -> Lowering to safe Rust (0 unwrap/expect)... {}",
+        crate::utils::green_bold("ok")
+    );
+    println!(
+        "  -> Compiling{} via cargo...",
         if run_after_build { " & running" } else { "" }
     );
 

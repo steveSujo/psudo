@@ -146,7 +146,12 @@ pub fn resolve_model_path(explicit: Option<&Path>) -> Option<PathBuf> {
         return Some(existing_33m);
     }
 
-    eprintln!("[model] Using embedded 33.6M fallback (100M GGUF not found in CWD or repo root)");
+    eprintln!(
+        "{}",
+        crate::utils::yellow_err(
+            "[model] Using embedded 33.6M fallback (100M GGUF not found in CWD or repo root)"
+        )
+    );
     // Auto-extract embedded model to .pseudo/state/models/pseudo-33m-tq2_0.gguf
     crate::embedded_model::ensure_embedded_model_extracted().ok()
 }

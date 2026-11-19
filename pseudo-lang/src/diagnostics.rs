@@ -141,10 +141,12 @@ impl Diagnostic {
             "here"
         };
 
+        let hdr = crate::utils::red_bold(&format!("error[{}]", self.code));
+        let help_lbl = crate::utils::yellow("help:");
         format!(
-            "error[{}]: {}\n --> {}:{}:{}\n  |\n{} | {}\n  | {}{} {}\n  =\n  = help: {}\n",
-            self.code, self.message, self.file, self.line, self.column,
-            self.line, src_line, padding, caret, label, self.help
+            "{}: {}\n --> {}:{}:{}\n  |\n{} | {}\n  | {}{} {}\n  =\n  = {} {}\n",
+            hdr, self.message, self.file, self.line, self.column,
+            self.line, src_line, padding, caret, label, help_lbl, self.help
         )
     }
 }

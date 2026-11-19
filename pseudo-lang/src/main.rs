@@ -2599,18 +2599,27 @@ fn run_cmd_demo(args: &[String]) {
     let _ = fs::remove_dir_all(&demo_dir);
     let _ = fs::create_dir_all(&demo_dir);
 
-    let directive = "if val < lo return lo, if val > hi return hi, else return val";
+    let directive = "if units <= free_tier return 0, else return (units - free_tier) * rate";
     let mut cap = WorkspaceCapsule::new_empty("psudo_live_demo");
-    let starter = "fn clamp_val(val, lo, hi)\n    @stub(\"if val < lo return lo, if val > hi return hi, else return val\")\n\nfn main()\n    let res = clamp_val(150, 0, 100)\n    print(\"clamp_val(150, 0, 100) = \" + str(res))\n    return res\n\nmain()\n";
+    let starter = "fn compute_fee(units, rate, free_tier)\n    @stub(\"if units <= free_tier return 0, else return (units - free_tier) * rate\")\n\nfn main()\n    let res = compute_fee(15, 2, 10)\n    print(\"compute_fee(15, 2, 10) = \" + str(res))\n    return res\n\nmain()\n";
     if let Err(e) = cap.set_file("src/main.psudo", starter.to_string()) {
         eprintln!("Demo init failed: {}", e);
         process::exit(1);
     }
 
-    println!("=== psudo live demo ===");
-    println!("[1/3] @stub Directive:");
-    println!("  fn clamp_val(val, lo, hi)");
-    println!("      @stub(\"{}\")\n", directive);
+    println!(
+        "{}",
+        psudo::utils::cyan_bold("psudo demo — 47MB TQ2_0 + PDA-masked pIR -> safe Rust (0 .unwrap())")
+    );
+    println!("{}", psudo::utils::cyan_bold("[1/4] @stub Directive:"));
+    println!(
+        "  {}",
+        psudo::utils::dim("fn compute_fee(units, rate, free_tier)")
+    );
+    println!(
+        "      {}\n",
+        psudo::utils::dim(&format!("@stub(\"{}\")", directive))
+    );
 
     let port = match psudo::blackbox::ensure_daemon_running(model_path.as_deref()) {
         Ok(p) => p,
@@ -2620,8 +2629,8 @@ fn run_cmd_demo(args: &[String]) {
         }
     };
     let req = psudo::blackbox::DaemonSynthRequest {
-        symbol: "clamp_val".to_string(),
-        params: vec!["val".into(), "lo".into(), "hi".into()],
+        symbol: "compute_fee".to_string(),
+        params: vec!["units".into(), "rate".into(), "free_tier".into()],
         directive: Some(directive.to_string()),
     };
     let synth_resp = match psudo::blackbox::post_daemon_synth(port, &req) {
@@ -2632,41 +2641,56 @@ fn run_cmd_demo(args: &[String]) {
         }
     };
 
+    let tps_str = psudo::utils::green_bold(&format!("{:.1} tok/s", synth_resp.decode_tps));
     println!(
-        "[2/3] Grammar-Masked pIR & Decompiled .psudo ({:.1} tok/s):",
-        synth_resp.decode_tps
+        "{} ({}):",
+        psudo::utils::cyan_bold("[2/4] Grammar-Masked pIR & Decompiled .psudo"),
+        tps_str
     );
     if !synth_resp.pir.is_empty() {
-        println!("  pIR: {}", synth_resp.pir.replace('\n', "\n       "));
+        let pir_indented = synth_resp.pir.replace('\n', "\n       ");
+        println!("  pIR: {}", psudo::utils::dim(&pir_indented));
     }
-    println!("  .psudo:\n  {}\n", synth_resp.psudo.replace('\n', "\n  "));
+    let psudo_indented = synth_resp.psudo.replace('\n', "\n  ");
+    println!("  .psudo:\n  {}\n", psudo::utils::dim(&psudo_indented));
 
     let full_src = format!(
-        "{}\n\nfn main()\n    let res = clamp_val(150, 0, 100)\n    print(\"clamp_val(150, 0, 100) = \" + str(res))\n    return res\n\nmain()\n",
+        "{}\n\nfn main()\n    let res = compute_fee(15, 2, 10)\n    print(\"compute_fee(15, 2, 10) = \" + str(res))\n    return res\n\nmain()\n",
         synth_resp.psudo
     );
     let _ = cap.set_file("src/main.psudo", full_src.clone());
     let rust_src = transpile_psudo_to_rust(&full_src, false).unwrap_or_default();
     let rust_fn_preview: String = rust_src
         .lines()
-        .skip_while(|l| !l.starts_with("pub fn clamp_val"))
+        .skip_while(|l| !l.starts_with("pub fn compute_fee"))
         .take(12)
         .collect::<Vec<_>>()
         .join("\n  ");
 
-    println!("[3/3] Lowered Safe Rust (0 .unwrap() / .expect()) & Execution:");
-    println!("  {}\n", rust_fn_preview);
+    println!(
+        "{} ({}):",
+        psudo::utils::cyan_bold("[3/4] Lowered Safe Rust"),
+        psudo::utils::green_bold("0 .unwrap() / .expect()")
+    );
+    println!("  {}\n", psudo::utils::dim(&rust_fn_preview));
 
+    println!("{}", psudo::utils::cyan_bold("[4/4] Native Compile & Execution:"));
     let out_dir = demo_dir.join(".pseudo").join("build");
     match build_rust_binary_from_capsule(&cap, &out_dir, false, true) {
         Ok(rep) => {
             if let Some(stdout) = rep.stdout {
-                println!("  Output: {}", stdout.trim());
+                println!(
+                    "  Output: {}",
+                    psudo::utils::green_bold(stdout.trim())
+                );
             }
             println!(
-                "  Binary: {} ({} bytes, zero .unwrap())",
-                rep.binary_path.display(),
-                rep.binary_size_bytes
+                "  {}",
+                psudo::utils::dim(&format!(
+                    "Binary: {} ({} bytes, zero .unwrap())",
+                    rep.binary_path.display(),
+                    rep.binary_size_bytes
+                ))
             );
         }
         Err(e) => {

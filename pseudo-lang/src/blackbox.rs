@@ -296,8 +296,11 @@ pub fn ensure_daemon_running(model_override: Option<&Path>) -> Result<u16, Strin
         if get_daemon_health(port).is_ok() {
             let _ = std::fs::write(mtime_file, current_mtime.to_string());
             eprintln!(
-                "[daemon] Started background pseudo-engine (PID {}). Stop anytime with 'psudo daemon stop'.",
-                child_pid
+                "{}",
+                crate::utils::yellow_err(&format!(
+                    "[daemon] Started background pseudo-engine (PID {}). Stop anytime with 'psudo daemon stop'.",
+                    child_pid
+                ))
             );
             return Ok(port);
         }

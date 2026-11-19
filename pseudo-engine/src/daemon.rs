@@ -29,6 +29,8 @@ pub struct SynthRequest {
 pub struct SynthResponse {
     pub symbol: String,
     pub psudo: String,
+    #[serde(default)]
+    pub pir: String,
     pub decode_tps: f32,
 }
 
@@ -234,6 +236,7 @@ fn handle_client(
             let resp = SynthResponse {
                 symbol: req.symbol,
                 psudo: synthesized_psudo,
+                pir: full_pir.trim().to_string(),
                 decode_tps: metrics.decode_tps as f32,
             };
             let body = serde_json::to_string(&resp)?;
@@ -514,6 +517,7 @@ mod tests {
         let resp = SynthResponse {
             symbol: "fib".to_string(),
             psudo: "fn fib(n)\n    return n".to_string(),
+            pir: "f fib (n) [ r n ]".to_string(),
             decode_tps: 42.0,
         };
         let json = serde_json::to_string(&resp).unwrap();

@@ -167,3 +167,12 @@ fn test_self_teaching_hints_and_default_cwd_capsule_cli() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_ansi_color_gates_cleanly_on_non_tty() {
+    assert_eq!(psudo::utils::paint("ok", "1;32", false), "ok");
+    assert_eq!(
+        psudo::utils::paint("ok", "1;32", true),
+        "\x1b[1;32mok\x1b[0m"
+    );
+}

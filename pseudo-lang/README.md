@@ -1,20 +1,20 @@
 # pseudo-lang (`psudo`)
 
-Core language implementation and `psudo` CLI for the [psudo](../README.md) project.
+Systems scaffolding, `pIR` wire codec, static borrow checker, and `psudo` CLI for [psudo](../README.md).
 
-It started as a small Lox-inspired interpreter, then grew into the compiler, borrow checker, `psudo.bin` virtual capsule, `pIR` codec, MCP server, and LSP that sits in front of `pseudo-engine` and `pseudo-transpiler`.
+This crate wraps the 100M 2-bit ternary model (`pseudo-engine`) in deterministic tooling so that a 47.0 MB checkpoint can synthesize verified atomic functions inside a sealed `psudo.bin` capsule before `pseudo-transpiler` lowers them to safe Rust.
 
 ## What's Inside (`src/`)
 
 | File | Role |
-|---|---|
+| --- | --- |
 | `main.rs` | `psudo` CLI (`init`, `contract`, `vfs`, `synth`, `check`, `test`, `run`, `build`, `mcp`, `--lsp`) |
 | `lexer.rs`, `parser.rs` | 4-space Python-indented `.psudo` lexer, Pratt parser, and tree-walking interpreter |
-| `pir_parser.rs` | `pIR` S-expression parser (`v`, `=`, `p`, `?`, `w`, `f`, `r`, `c`, `m`) |
+| `pir_parser.rs` | Polish-prefix `pIR` S-expression parser (`v`, `=`, `p`, `?`, `w`, `f`, `r`, `c`, `m`) |
 | `ownership.rs` | Static borrow checker (`Copy` primitives vs `Move` arrays/maps) |
 | `vfs.rs`, `contract_gen.rs` | Sealed `psudo.bin` workspace capsule and YAML/JSON behavioral contract extractor |
-| `blackbox.rs` | Local GGUF synthesis bridge (`pseudo-100m-tq2_0.gguf` / embedded 33M fallback) |
-| `codegen.rs` | Lowering pass to zero-`unwrap()` safe Rust |
+| `blackbox.rs` | Local GGUF synthesis bridge (`pseudo-100m-tq2_0.gguf` and embedded 33.6M fallback) |
+| `codegen.rs` | Lowering pass to zero-`.unwrap()` safe Rust |
 | `mcp.rs`, `lsp/` | JSON-RPC 2.0 MCP stdio server and Language Server Protocol backend |
 
 ## Build & Run
@@ -24,7 +24,7 @@ It started as a small Lox-inspired interpreter, then grew into the compiler, bor
 cargo build --release
 ./target/release/psudo --help
 
-# Common workflow
+# Common orchestrator workflow
 ./target/release/psudo init my-app --template blank --with-docs
 ./target/release/psudo contract my-app/psudo.bin
 ./target/release/psudo vfs stub my-app/psudo.bin add_one x --directive "return x + 1"
@@ -33,7 +33,7 @@ cargo build --release
 ./target/release/psudo build my-app/psudo.bin --run
 ```
 
-You can also run standalone `.psudo` or `.pir` scripts directly:
+You can also run standalone `.psudo` or `.pir` files directly:
 
 ```bash
 ./target/release/psudo -f pseudo-lang/scripts/hello.psudo

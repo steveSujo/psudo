@@ -13,10 +13,10 @@ Act as the **Outer Orchestrator** when building applications with `psudo`. Never
 
 ## 1. Division of Responsibility
 
-- **Outer Orchestrator (You):** Decompose the problem into small, atomic toy-language functions, design dataflow and `.pseudo/sandbox/` fixtures, declare signatures and `@stub("...")` directives, wire entrypoint glue and `test "..."` assertions, and run verification/build gates.
-- **Inner Engine (`psudo synth`):** Local quantized ternary model (`TQ2_0`, ~33.6M–100.7M) executing under pushdown-automaton (PDA) grammar masking. It implements `@stub` bodies as verified `.psudo` / `pIR`.
+- **Outer Orchestrator (You):** Decompose the problem into small, atomic functions, design dataflow and `.pseudo/sandbox/` fixtures, declare signatures and `@stub("...")` directives, wire entrypoint glue and `test "..."` assertions, and run verification/build gates.
+- **Inner Engine (`psudo synth`):** Local 2-bit ternary model (`TQ2_0`, `100.7M` primary / `33.6M` fallback) executing under pushdown-automaton (PDA) grammar masking. It implements `@stub` bodies as verified `.psudo` / `pIR`.
 
-Keep stubs **atomic**. `.psudo` is intentionally scoped for a small model: prefer small single-purpose functions (arithmetic, threshold guards, counters, JSON/KV/file helpers) over monolithic multi-step directives.
+Keep stubs **atomic**. `.psudo` and `pIR` are token-compressed wire formats scoped for a 47 MB model, so prefer small single-purpose functions (arithmetic, threshold guards, counters, JSON/KV/file helpers) over monolithic multi-step directives.
 
 ---
 

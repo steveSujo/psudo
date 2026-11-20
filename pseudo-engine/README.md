@@ -1,22 +1,22 @@
 # pseudo-engine
 
-Pure-Rust, zero-copy inference engine for ternary-quantized (`TQ2_0`, 1.58-bit) GGUF models. Part of [psudo](../README.md).
+Pure-Rust, zero-copy inference runtime for 2-bit ternary (`TQ2_0`) GGUF models, built as the core engine of [psudo](../README.md).
 
-I wrote this in pure Rust with `memmap2` and integer-only ternary accumulation (`matmul_tq2_0`) so it runs out of the box without CUDA or C++ toolchains.
+I wrote this in pure Rust with `memmap2`, integer-only ternary accumulation (`matmul_tq2_0`), and an INT8 2-tier KV cache so that a 47.0 MB (100.7M) model runs locally inside a 4 GB VRAM budget without Python, C++, or CUDA toolchains.
 
 ## Modules (`src/`)
 
 | File | Role |
-|---|---|
+| --- | --- |
 | `gguf.rs` | Zero-copy GGUF parser and tensor map (`memmap2`) |
-| `tensor.rs`, `ops.rs` | Tensors, SIMD/integer ternary matmul (`matmul_tq2_0`) |
+| `tensor.rs`, `ops.rs` | Tensors and integer-only ternary matmul (`matmul_tq2_0`) |
 | `engine.rs` | Autoregressive transformer pipeline |
-| `kv_cache.rs` | 2-tier forked KV cache (`fork_sequence` in <1 ms) |
-| `sampler.rs` | Temperature/top-k/top-p/repetition sampling with PDA grammar mask (`PirPdaConstraint`) and channels (`Talk`, `Fim`, `Zettel`, `Pir`) |
-| `pir_decompiler.rs` | Converts streamed pIR into readable output |
-| `main.rs` | CLI, including MCP stdio server mode |
+| `kv_cache.rs` | 2-tier forked INT8 KV cache (`fork_sequence` in <1 ms) |
+| `sampler.rs` | Sampling with pushdown automaton (`PirPdaConstraint`) logit mask and channels (`Talk`, `Fim`, `Zettel`, `Pir`) |
+| `pir_decompiler.rs` | Converts streamed Polish-prefix `pIR` into readable `.psudo` |
+| `main.rs` | CLI and persistent `--mcp` / `--daemon` stdio server |
 
-KV tiers: Tier 0 (`0..150t`) pinned invariants; Tier 1 (`150..~800t`) module context; Tier 2 (`~800..1200t`) ephemeral per-call runway.
+KV tiers: Tier 0 (`0..150t`) holds pinned invariants, Tier 1 (`150..~800t`) holds module context, and Tier 2 (`~800..1200t`) acts as the ephemeral per-call runway.
 
 ## Build and run
 
@@ -27,7 +27,7 @@ cargo build --release --manifest-path pseudo-engine/Cargo.toml
 cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-100m-tq2_0.gguf --chat --color
 # One-shot
 cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-100m-tq2_0.gguf -p "fn calculate_total() {"
-# Benchmark
+# Benchmark (TTFT, decode TPS, memory)
 cargo run --release --manifest-path pseudo-engine/Cargo.toml -- -m ./pseudo-100m-tq2_0.gguf --benchmark
 # MCP server over stdio (model stays hot)
 cargo run --release --manifest-path pseudo-engine/Cargo.toml -- --mcp
@@ -36,7 +36,7 @@ cargo run --release --manifest-path pseudo-engine/Cargo.toml -- --mcp
 ## CLI options
 
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `-m, --model` | `pseudo-100m-tq2_0.gguf` | GGUF model path |
 | `-t, --tokenizer` | none | Tokenizer file |
 | `-p, --prompt` | none | One-shot prompt |
@@ -48,7 +48,7 @@ cargo run --release --manifest-path pseudo-engine/Cargo.toml -- --mcp
 | `--rep-penalty` | 1.1 | Repetition penalty |
 | `--max-tokens` | 512 | Generation limit |
 | `--threads` | 4 | Worker threads |
-| `--pir-mode` | off | Constrain output to pIR |
+| `--pir-mode` | off | Constrain output to `pIR` |
 | `--raw-prompt` | off | Skip prompt templating |
 | `--color` | off | Colored output |
 | `--benchmark` | off | TTFT, decode TPS, memory |
